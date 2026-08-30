@@ -137,8 +137,12 @@ function parseBlock(lines) {
     const href = /^https?:\/\//.test(parts[0]) ? parts[0] : `https://x.com/i/status/${id}`;
     return { type: 'x', id, href, cap: parts[1] || '' };
   }
-  if (/^@追記\s/.test(first)) {
-    return { type: 'add', date: first.replace(/^@追記\s+/, ''), paras: lines.slice(1) };
+  if (/^@追記(?:\s|$)/.test(first)) {
+    // 日付は省略できる。日付に見えなければ、その行の残りがそのまま一段落目になる
+    const rest = first.replace(/^@追記\s*/, '');
+    const date = /^\d{1,4}[./-]\d{1,2}(?:[./-]\d{1,2})?$/.test(rest) ? rest : '';
+    const head = !date && rest ? [rest] : [];
+    return { type: 'add', date, paras: [...head, ...lines.slice(1)] };
   }
   if (lines.every(l => /^>/.test(l))) {
     const inner = lines.map(l => l.replace(/^>\s?/, ''));
@@ -209,7 +213,7 @@ function entryText(entry) {
         case 'p': push(b.text); break;
         case 'quote': push(b.text); push(b.cite); break;
         case 'list': b.items.forEach(push); break;
-        case 'add': push(`追記 ${b.date}`); b.paras.forEach(push); break;
+        case 'add': push(b.date ? `追記 ${b.date}` : '追記'); b.paras.forEach(push); break;
         case 'img': case 'yt': case 'am': push(b.cap); break;
         case 'link': push(b.title); push(b.desc); push(b.site); break;
         case 'x': push(b.post?.text); push(b.cap); break;
@@ -437,7 +441,7 @@ function renderBlock(b, iso) {
     case 'add': {
       // ラベルは一段落目の頭に置く。本文の流れを切らずに続けて読ませるため。
       const paras = b.paras.length ? b.paras : [''];
-      const label = `<span class="add-label">追記 ${esc(b.date)}</span>`;
+      const label = `<span class="add-label">追記${b.date ? ` ${esc(b.date)}` : ''}</span>`;
       return `<aside class="addendum">${
         paras.map((p, i) => `<p>${i === 0 ? label : ''}${inline(p)}</p>`).join('')
       }</aside>`;
