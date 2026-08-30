@@ -1,5 +1,26 @@
 /* Diary v3 のモック（Diary v3.dc.html）を移植したスタイル。 */
 
+/* 一覧と日のあいだの遷移。同じ日の日付と本文は両方のページに同じ形・同じ大きさで出るので、
+   その二つだけ位置を動かし、残りの記事や上下の飾りは root の交差フェードに任せる。
+   古い写しと新しい写しの中身は同じなので、重ね合わせは既定のままで継ぎ目が出ない。
+   どの記事に名前を付けるかは assets/vt.js が選ぶ。
+
+   @view-transition はこのファイルの先頭に置く。入っていくページがこの宣言を読むのは最初の描画の前で、
+   後ろの方に書くとそこまで読み終わらないうちに判断され、遷移そのものが起きない。 */
+@view-transition { navigation: auto; }
+
+::view-transition-group(day-date),
+::view-transition-group(day-body) {
+  animation-duration: .32s;
+  animation-timing-function: cubic-bezier(.2, 0, 0, 1);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: .26s;
+}
+
+
 :root {
   --ink: #17181A;
   --sub: #6B7072;

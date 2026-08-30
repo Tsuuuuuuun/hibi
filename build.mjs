@@ -464,12 +464,13 @@ function renderSeg(seg, iso) {
 }
 
 // linkDate: 月ページでは日付が日ページへのリンク、日ページではリンクにしない。
+// data-day: 一覧と日のあいだの遷移で、同じ日の記事を両方のページで見つけるための目印（assets/vt.js）。
 function renderArticle(entry, { linkDate }) {
   const dateInner = `<span class="date">${disp(entry.iso)}</span><span class="dow">${dow(entry.iso)}</span>`;
   const meta = linkDate
     ? `<a class="datelink" href="${dayPath(entry.iso)}">${dateInner}</a>`
     : `<span class="datelink">${dateInner}</span>`;
-  return `<article><div class="meta">${meta}</div><div class="body">${
+  return `<article data-day="${entry.iso}"><div class="meta">${meta}</div><div class="body">${
     entry.segs.map(s => renderSeg(s, entry.iso)).join('')
   }</div></article>`;
 }
@@ -546,6 +547,9 @@ function pageShell({ title, description, canonical, og, body }) {
     `<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Shippori+Mincho:wght@400&family=Roboto+Mono:wght@400&display=swap" rel="stylesheet">`,
     `<link rel="stylesheet" href="/assets/style.css">`,
     `<script src="/assets/search.js" defer></script>`,
+    // vt.js は defer にしない。pagereveal は最初の描画のときに飛んでくるので、
+    // 解析の終わりまで待つ defer だと登録が間に合わず、行き先の記事に名前が付かない。
+    `<script src="/assets/vt.js"></script>`,
   ].filter(Boolean).join('\n');
   return `<!DOCTYPE html>
 <html lang="ja">
