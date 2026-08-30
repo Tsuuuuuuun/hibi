@@ -18,6 +18,17 @@ const DOW = ['日', '月', '火', '水', '木', '金', '土'];
 const esc = s => String(s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// 本文中のリンクは [表示文字](URL) と書く。対応するのはこれだけで、強調やコードはない。
+// 置換は esc の後に掛ける。表示文字にも URL にも生の < > " は残らないので、
+// リンクの形をした入力から新しいタグが生えることはない。
+// 直前が ! のものは写真の記法なので拾わない（写真は行全体で書く）。
+// URL の中の () は一段だけ入れ子を許す（Wikipedia の /Foo_(bar) のような形のため）
+const INLINE_LINK = /(?<!!)\[([^\]\n]+)\]\(((?:https?:\/\/|\/)(?:[^\s()]|\([^\s()]*\))*)\)/g;
+const inline = s => esc(s).replace(INLINE_LINK, (_, label, href) =>
+  href.startsWith('/')
+    ? `<a href="${href}">${label}</a>`
+    : `<a href="${href}" target="_blank" rel="noopener">${label}</a>`);
+
 /* ---------------- 画像サイズ ---------------- */
 
 // width/height/aspect-ratio を必ず出すため、JPEG/PNG のヘッダから寸法を読む。
@@ -167,7 +178,8 @@ function excerpt(entry) {
     .flatMap(s => s.blocks)
     .filter(b => b.type === 'p')
     .map(b => b.text)
-    .join('');
+    .join('')
+    .replace(INLINE_LINK, '$1'); // 抜粋は本文だけ。リンクは表示文字だけ残す
   return text.length > 60 ? text.slice(0, 60) + '…' : text;
 }
 
@@ -351,19 +363,19 @@ async function expandTco(url) {
 function renderBlock(b, iso) {
   switch (b.type) {
     case 'p':
-      return `<p>${esc(b.text)}</p>`;
+      return `<p>${inline(b.text)}</p>`;
     case 'quote':
-      return `<blockquote><span class="q-body">${esc(b.text)}</span>${
-        b.cite ? `<cite>${esc(b.cite)}</cite>` : ''
+      return `<blockquote><span class="q-body">${inline(b.text)}</span>${
+        b.cite ? `<cite>${inline(b.cite)}</cite>` : ''
       }</blockquote>`;
     case 'list':
-      return `<ul>${b.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`;
+      return `<ul>${b.items.map(i => `<li>${inline(i)}</li>`).join('')}</ul>`;
     case 'add': {
       // ラベルは一段落目の頭に置く。本文の流れを切らずに続けて読ませるため。
       const paras = b.paras.length ? b.paras : [''];
       const label = `<span class="add-label">追記 ${esc(b.date)}</span>`;
       return `<aside class="addendum">${
-        paras.map((p, i) => `<p>${i === 0 ? label : ''}${esc(p)}</p>`).join('')
+        paras.map((p, i) => `<p>${i === 0 ? label : ''}${inline(p)}</p>`).join('')
       }</aside>`;
     }
     case 'link': {

@@ -113,6 +113,13 @@ a.datelink:hover {
 
 .prose { max-width: 52em; }
 
+/* 本文中のリンク。下線は残す（本文と地続きなので、色だけでは見分けにくい）。
+   明朝の縦画に下線が当たらないよう、少し下げる。 */
+.prose p a, .prose li a, .prose blockquote a, .prose cite a {
+  text-underline-offset: .18em;
+  text-decoration-thickness: from-font;
+}
+
 .prose time {
   display: flex;
   align-items: center;
