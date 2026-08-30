@@ -18,16 +18,23 @@
     return m ? m.slice(1).join('-') : null;
   };
 
+  const onScreen = el => {
+    const r = el.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  };
+
   // 行き先（または来た先）と今のページのどちらかが日ページで、その日の記事がこのページに出ていて、
-  // かつ画面の中にあるときだけ動かす。
-  // 画面の外まで見るのは、日ページから一覧へ進んだときに月の下の方の日が遠くにいることがあるため。
-  // そのときは名前を付けず、ふつうの交差フェードにする。
-  function pick(otherUrl) {
+  // かつ画面の中にあるときだけ動かす。遠くにいる記事を動かすと画面の外へ飛んでいくだけになる。
+  //
+  // 一覧に入っていくときは、来た日の記事が画面の外にいたらそこまで送ってから測る。
+  // 「一覧へ」は一覧の先頭に着くので、月の下の方の日はそのままだと必ず画面の外にいて動かせない。
+  // 送っておけば戻るボタンと同じ位置に着き、動きも同じになる（戻るボタンは位置が復元されるので送らない）。
+  function pick(otherUrl, arriving) {
     const day = dayOf(otherUrl) || dayOf(location.href);
     const el = day && document.querySelector(`article[data-day="${day}"]`);
     if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return r.bottom > 0 && r.top < innerHeight ? el : null;
+    if (arriving && dayOf(otherUrl) && !onScreen(el)) el.scrollIntoView();
+    return onScreen(el) ? el : null;
   }
 
   // 付けた名前は残さない（view-transition-name は包含のふるまいを変えるので、遷移が終わったら外す）
@@ -41,15 +48,15 @@
     return marked.length ? () => marked.forEach(n => { n.style.viewTransitionName = ''; }) : null;
   }
 
-  const setup = (vt, otherUrl) => {
+  const setup = (vt, otherUrl, arriving) => {
     if (!vt) return;
     if (reduce.matches) return vt.skipTransition();
-    const clear = mark(pick(otherUrl));
+    const clear = mark(pick(otherUrl, arriving));
     if (clear) vt.finished.then(clear, clear);
   };
 
   // 出ていく側。写しを取る直前に呼ばれるので、ここで付ければその名前で写る。
-  addEventListener('pageswap', e => setup(e.viewTransition, e.activation?.entry?.url));
-  // 入る側。最初の描画の前に呼ばれる。
-  addEventListener('pagereveal', e => setup(e.viewTransition, window.navigation?.activation?.from?.url));
+  addEventListener('pageswap', e => setup(e.viewTransition, e.activation?.entry?.url, false));
+  // 入る側。最初の描画の前に呼ばれるので、ここで送った位置がそのまま写る。
+  addEventListener('pagereveal', e => setup(e.viewTransition, window.navigation?.activation?.from?.url, true));
 })();
