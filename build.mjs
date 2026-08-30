@@ -32,8 +32,9 @@ const inline = s => esc(s).replace(INLINE_LINK, (_, label, href) =>
 /* ---------------- 画像サイズ ---------------- */
 
 // width/height/aspect-ratio を必ず出すため、JPEG/PNG のヘッダから寸法を読む。
-function imageSize(file) {
-  const buf = fs.readFileSync(file);
+const imageSize = file => imageSizeOf(fs.readFileSync(file), file);
+
+function imageSizeOf(buf, label) {
   if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) {
     return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
   }
@@ -48,7 +49,7 @@ function imageSize(file) {
       i += 2 + buf.readUInt16BE(i + 2);
     }
   }
-  throw new Error(`画像サイズを読めない: ${file}（JPEG/PNG のみ対応）`);
+  throw new Error(`画像サイズを読めない: ${label}（JPEG/PNG のみ対応）`);
 }
 
 /* ---------------- パース ---------------- */
@@ -170,7 +171,10 @@ const tweetId = s => /^\d+$/.test(s)
   : s.match(/(?:twitter|x)\.com\/[^/]+\/status(?:es)?\/(\d+)/)?.[1] || '';
 
 // 画像は md と同じ日ディレクトリに置き、ファイル名で参照する。URL は日ページの隣になる
-const assetUrl = (src, iso) => /^https?:\/\//.test(src) ? src : dayPath(iso) + src;
+const isRemote = src => /^https?:\/\//.test(src);
+const assetUrl = (src, iso) => isRemote(src) ? src : dayPath(iso) + src;
+// OGP など絶対 URL が要るところで使う。外部 URL はそのまま通す
+const absUrl = url => isRemote(url) ? url : config.baseUrl + url;
 
 // 本文冒頭 60 文字。OGP・RSS の説明文に使う。
 function excerpt(entry) {
@@ -284,6 +288,42 @@ async function fetchOgp(url) {
     image,
     fetchedAt: new Date().toISOString().slice(0, 10),
   };
+}
+
+/* ---------------- 外部画像の寸法取得 ---------------- */
+
+const IMG_CACHE_FILE = path.join(ROOT, '.cache', 'imagesize.json');
+
+// 外部 URL の画像はファイルから測れないので、ビルド時に落として測り、キャッシュする。
+// 取れなかったものは寸法なしで出す（レイアウトは揺れるが、ビルドは止めない）。
+async function resolveRemoteImages(entries) {
+  const imgs = entries.flatMap(e => e.segs).flatMap(s => s.blocks)
+    .filter(b => b.type === 'img' && isRemote(b.src));
+  if (!imgs.length) return;
+  const cache = fs.existsSync(IMG_CACHE_FILE) ? JSON.parse(fs.readFileSync(IMG_CACHE_FILE, 'utf8')) : {};
+
+  const need = [...new Set(imgs.filter(b => !(b.src in cache)).map(b => b.src))];
+  let fetched = 0;
+  await Promise.all(need.map(async url => {
+    try {
+      const res = await fetch(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; hibi-build)' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      cache[url] = imageSizeOf(Buffer.from(await res.arrayBuffer()), url);
+      fetched++;
+    } catch (e) {
+      console.warn(`画像: 寸法を取れない ${url}（${e.message}）`);
+    }
+  }));
+  if (fetched) {
+    fs.mkdirSync(path.dirname(IMG_CACHE_FILE), { recursive: true });
+    fs.writeFileSync(IMG_CACHE_FILE, JSON.stringify(cache, null, 2) + '\n');
+  }
+
+  for (const b of imgs) b.size = cache[b.src] ?? null;
 }
 
 /* ---------------- X ポストの取得 ---------------- */
@@ -449,9 +489,11 @@ function renderBlock(b, iso) {
 }
 
 function renderFigure(im, iso) {
-  const { w, h } = imageSize(path.join(CONTENT, dayDir(iso), im.src));
+  // 外部 URL は resolveRemoteImages で測った寸法を使う。ローカルはファイルから読む
+  const size = isRemote(im.src) ? im.size : imageSize(path.join(CONTENT, dayDir(iso), im.src));
+  const dim = size ? ` width="${size.w}" height="${size.h}" style="aspect-ratio:${size.w}/${size.h}"` : '';
   return `<figure class="photos">` +
-    `<img src="${esc(assetUrl(im.src, iso))}" width="${w}" height="${h}" alt="" loading="lazy" decoding="async" style="aspect-ratio:${w}/${h}">` +
+    `<img src="${esc(assetUrl(im.src, iso))}"${dim} alt="" loading="lazy" decoding="async">` +
     (im.cap ? `<figcaption>${esc(im.cap)}</figcaption>` : '') + `</figure>`;
 }
 
@@ -610,7 +652,7 @@ function dayPageHtml(entries, entry) {
       `<meta property="og:title" content="${disp(entry.iso)}">`,
       `<meta property="og:description" content="${esc(description)}">`,
       `<meta property="og:url" content="${esc(url)}">`,
-      image ? `<meta property="og:image" content="${esc(config.baseUrl + assetUrl(image.src, entry.iso))}">` : '',
+      image ? `<meta property="og:image" content="${esc(absUrl(assetUrl(image.src, entry.iso)))}">` : '',
     ].filter(Boolean),
     body,
   });
@@ -676,6 +718,7 @@ async function build() {
   if (!entries.length) throw new Error('content/ に日記ファイルがない');
   await resolveLinkCards(entries);
   await resolveXPosts(entries);
+  await resolveRemoteImages(entries);
   const monthKeys = [...new Set(entries.map(e => e.iso.slice(0, 7)))];
 
   fs.rmSync(OUT, { recursive: true, force: true });
