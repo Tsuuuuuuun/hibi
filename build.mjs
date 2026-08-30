@@ -500,23 +500,34 @@ function renderFigure(im, iso) {
     (im.cap ? `<figcaption>${esc(im.cap)}</figcaption>` : '') + `</figure>`;
 }
 
-function renderSeg(seg, iso) {
+// id は日付の下の時刻の並び（.times）から飛ぶ先。ファイル名と同じ HH-MM。
+// 月ページは一枚に複数の日が載り、同じ時刻が別の日と衝突するので id を置かない。
+function renderSeg(seg, iso, { anchor }) {
   const parts = [`<time datetime="${iso}T${seg.time}">${seg.time}</time>`];
   for (const b of seg.blocks) {
     parts.push(b.type === 'img' ? renderFigure(b, iso) : renderBlock(b, iso));
   }
-  return `<div class="seg"><div class="prose">${parts.join('')}</div></div>`;
+  return `<div class="seg"${anchor ? ` id="${timeId(seg.time)}"` : ''}><div class="prose">${parts.join('')}</div></div>`;
 }
+
+const timeId = time => time.replace(':', '-');
 
 // linkDate: 月ページでは日付が日ページへのリンク、日ページではリンクにしない。
 // data-day: 一覧と日のあいだの遷移で、同じ日の記事を両方のページで見つけるための目印（assets/vt.js）。
+// 日付の下にその日の時刻を並べ、押すとその時刻ブロックへ飛ぶ。
+// 日ページはページの中のアンカー、月ページは日ページのアンカー（日付と同じく日へ移る）。
 function renderArticle(entry, { linkDate }) {
+  const anchor = !linkDate;
   const dateInner = `<span class="date">${disp(entry.iso)}</span><span class="dow">${dow(entry.iso)}</span>`;
   const meta = linkDate
     ? `<a class="datelink" href="${dayPath(entry.iso)}">${dateInner}</a>`
     : `<span class="datelink">${dateInner}</span>`;
-  return `<article data-day="${entry.iso}"><div class="meta">${meta}</div><div class="body">${
-    entry.segs.map(s => renderSeg(s, entry.iso)).join('')
+  const base = anchor ? '' : dayPath(entry.iso);
+  const times = `<nav class="times" aria-label="この日の時刻">${
+    entry.segs.map(s => `<a href="${base}#${timeId(s.time)}">${s.time}</a>`).join('')
+  }</nav>`;
+  return `<article data-day="${entry.iso}"><div class="meta">${meta}${times}</div><div class="body">${
+    entry.segs.map(s => renderSeg(s, entry.iso, { anchor })).join('')
   }</div></article>`;
 }
 

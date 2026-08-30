@@ -8,7 +8,14 @@
 (() => {
   if (!('startViewTransition' in document)) return;
 
-  const NAMES = [['.datelink', 'day-date'], ['.body', 'day-body']];
+  // 動かす相手。日付・その下の時刻・本文の三つで、どれも両方のページに同じ形で出る。
+  // 「一覧へ」は同じページの中のジャンプのときだけ（月ページには無いので、そこでは見つからない）。
+  const NAMES = [
+    ['.datelink', 'day-date'],
+    ['.times', 'day-times'],
+    ['.body', 'day-body'],
+    ['.back', 'day-back'],
+  ];
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 
   // /2026/08/30/ → 2026-08-30。月ページや 404 は null。
@@ -63,4 +70,22 @@
   addEventListener('pageswap', e => setup(e.viewTransition, e.activation?.entry?.url, false));
   // 入る側。最初の描画の前に呼ばれるので、ここで送った位置がそのまま写る。
   addEventListener('pagereveal', e => setup(e.viewTransition, window.navigation?.activation?.from?.url, true));
+
+  // 同じページの中の時刻ジャンプ（日ページの、日付の下の時刻）。
+  // ページを移るときと同じ二つ（日付と本文）に名前を付けて、同じ動きで移す。
+  // 日付は貼り付いているので位置が変わらず、動くのは本文だけになる。
+  addEventListener('click', e => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest?.('.times a[href^="#"]');
+    if (!a || reduce.matches) return;
+    if (!document.getElementById(decodeURIComponent(a.hash.slice(1)))) return; // 飛び先が無ければ既定に任せる
+    e.preventDefault();
+    // 名前は写しを取る前に付ける（startViewTransition を呼んだ時点で古い側が写る）
+    const clear = mark(a.closest('.wrap'));  // 「一覧へ」も動く（記事の外にあるので囲いから探す）
+    // hash を書き換えると履歴にも残る（戻るで元の位置に戻れる）。位置はその場で移り、写しに入る。
+    const vt = document.startViewTransition(() => { location.hash = a.hash; });
+    // 途中で別のページへ移ると遷移は飛ばされる。ready は捨てておかないと未処理の拒否になる。
+    vt.ready.catch(() => {});
+    if (clear) vt.finished.then(clear, clear);
+  });
 })();

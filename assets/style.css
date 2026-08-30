@@ -1,7 +1,8 @@
 /* Diary v3 のモック（Diary v3.dc.html）を移植したスタイル。 */
 
-/* 一覧と日のあいだの遷移。同じ日の日付と本文は両方のページに同じ形・同じ大きさで出るので、
-   その二つだけ位置を動かし、残りの記事や上下の飾りは root の交差フェードに任せる。
+/* 一覧と日のあいだの遷移。同じ日の日付・時刻・本文は両方のページに同じ形・同じ大きさで出るので、
+   それだけ位置を動かし、残りの記事や上下の飾りは root の交差フェードに任せる。
+   同じページの中の時刻ジャンプも同じ動きで、そのときは「一覧へ」も一緒に動く。
    古い写しと新しい写しの中身は同じなので、重ね合わせは既定のままで継ぎ目が出ない。
    どの記事に名前を付けるかは assets/vt.js が選ぶ。
 
@@ -10,6 +11,8 @@
 @view-transition { navigation: auto; }
 
 ::view-transition-group(day-date),
+::view-transition-group(day-times),
+::view-transition-group(day-back),
 ::view-transition-group(day-body) {
   animation-duration: .32s;
   animation-timing-function: cubic-bezier(.2, 0, 0, 1);
@@ -39,9 +42,15 @@
   /* 二段組の寸法。日付の段・段のあいだ・本文の幅の三つで、
      囲いの幅も、下の移動と検索の左端も、ここから決まる。 */
   --meta-col: 120px;
-  --col-gap: 40px;
+  --col-gap: 56px;
   --body-col: 52em;
   --body-indent: calc(var(--meta-col) + var(--col-gap));
+
+  /* 二段組で貼り付く位置。「一覧へ」が窓の上から --rail-top、日付の列はそこから --rail-gap 下。
+     --rail-gap は静止しているときのこの二つの距離なので、貼り付いても間隔が変わらない
+     （二つとも同じところで止まるので、スクロールしても左の並びは動かない）。 */
+  --rail-top: 24px;
+  --rail-gap: 77px;
 }
 
 * { box-sizing: border-box; }
@@ -265,12 +274,17 @@ dialog.jump::backdrop { background: rgba(23, 24, 26, .18); }
 /* 覆いが出ているあいだは後ろを動かさない */
 html:has(dialog.search[open]), html:has(dialog.jump[open]) { overflow: hidden; }
 
-/* 日ページ上部の「一覧へ」。左端を本文に揃える（下の移動・検索と同じ寄せ） */
+/* 日ページ上部の「一覧へ」。窓の上に貼り付けて、どこまで読んでも戻れるようにする。
+   囲いの中に置いてあるので、記事を過ぎて前後の移動や末尾の二語まで下りても残る。
+   下の日付の列（.meta）はこのぶんだけ下げて止める。 */
 .back {
+  position: sticky;
+  top: var(--rail-top);
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 30px 0 -22px var(--body-indent);
+  margin: 30px 0 -22px;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: .16em;
@@ -291,11 +305,14 @@ article {
 .meta {
   align-self: start;
   position: sticky;
-  top: 24px;
+  top: var(--rail-top);
   padding-right: var(--col-gap);
   margin-right: calc(var(--col-gap) * -1);
   min-height: 64px;
 }
+
+/* 「一覧へ」のある日ページでは、そのぶん下げて止める（月一覧には無いので --rail-top のまま） */
+.wrap:has(.back) .meta { top: calc(var(--rail-top) + var(--rail-gap)); }
 
 .datelink {
   display: block;
@@ -304,6 +321,31 @@ article {
   border-bottom: 1px solid transparent;
 }
 a.datelink:hover {
+  color: var(--navy);
+  border-bottom-color: var(--navy);
+}
+
+/* 日付の下に、その日の時刻を並べる。押すとその時刻ブロック（.seg の id）へ飛ぶ。
+   .meta は sticky なので、日ページを読んでいるあいだ左に出たままになる。 */
+.times {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 6px;
+  margin-top: 16px;
+}
+.times a {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .14em;
+  color: var(--faint);
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 2px;
+}
+.times a:hover {
   color: var(--navy);
   border-bottom-color: var(--navy);
 }
@@ -335,7 +377,7 @@ a.datelink:hover {
   letter-spacing: 0;
 }
 
-.seg { margin-top: 2em; }
+.seg { margin-top: 2em; scroll-margin-top: 2rem; }
 .seg:first-child { margin-top: 0; }
 
 .prose { max-width: 52em; }
@@ -573,8 +615,8 @@ figcaption {
   text-align: center;
 }
 
-/* 前後の移動。上の「一覧へ」と同じく、日付の段のぶんだけ右へ寄せて
-   本文と左端・中心を揃える（検索の一語が写真の説明と同じ中心に来る） */
+/* 前後の移動。日付の段のぶんだけ右へ寄せ、本文と左端・中心を揃える
+   （検索の一語が写真の説明と同じ中心に来る） */
 .pager, .foot { margin-left: var(--body-indent); }
 
 .pager {
@@ -614,7 +656,10 @@ figcaption {
     justify-content: stretch;
   }
   /* 一段組では本文が囲いいっぱいなので、寄せは戻す */
-  .back, .pager, .foot { margin-left: 0; }
+  .pager, .foot { margin-left: 0; }
+  /* 一段組では本文が囲いいっぱいなので、貼り付けると本文が「一覧へ」の下を通ってしまう。
+     背景を敷いて隠すほどのものでもないので、どちらもふつうに流す。 */
+  .back { position: static; }
   .meta {
     position: static;
     padding-right: 0;
@@ -627,6 +672,13 @@ figcaption {
     gap: 12px;
   }
   .dow { margin-top: 0; }
+  /* 一段組では日付が本文の上の一行になるので、時刻もその下に横へ並べる */
+  .times {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 10px;
+  }
   /* モバイルでも横並びを保ち、サムネイルだけ細くする */
   .card--thumb { grid-template-columns: 1fr 96px; }
   dialog.search { margin-top: 8vh; max-height: calc(100vh - 16vh); }
