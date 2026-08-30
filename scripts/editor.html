@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>書く</title>
+<style>
+  /* サイト本体（assets/style.css）と同じ色を使う。ここは道具なので線は細く、面は静かに。 */
+  :root {
+    --ink: #17181A;
+    --sub: #6B7072;
+    --faint: #9AA09E;
+    --hair: #EAEBE8;
+    --hair-dark: #C9CCC6;
+    --navy: #23406B;
+    --warn: #8A5A1B;
+    --bg: #FFFFFF;
+    --chrome: #F7F7F5;
+    --sans: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic Medium', 'Meiryo', sans-serif;
+    --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+    --head: 52px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.7;
+    overflow: hidden;
+  }
+
+  /* ---------------- 上のバー ---------------- */
+
+  header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: var(--head);
+    padding: 0 14px;
+    border-bottom: 1px solid var(--hair);
+    background: var(--chrome);
+  }
+  /* 保存と同期のあいだの仕切り。同期はサイトを外に出す操作なので、少し離す */
+  .rule {
+    width: 1px;
+    height: 20px;
+    background: var(--hair-dark);
+    margin: 0 2px;
+  }
+  .brand {
+    flex: none;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .22em;
+    white-space: nowrap;
+    color: var(--sub);
+    padding-right: 4px;
+  }
+  .spacer { flex: 1; }
+
+  input[type=date], input[type=time] {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--hair-dark);
+    border-radius: 5px;
+    padding: 5px 7px;
+  }
+  input:focus-visible, button:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--navy);
+    outline-offset: 1px;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--hair-dark);
+    border-radius: 5px;
+    padding: 6px 11px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--sub); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary {
+    color: #fff;
+    background: var(--navy);
+    border-color: var(--navy);
+  }
+  button.primary:hover { background: #1a3157; }
+  button.danger:hover { color: #8A2B22; border-color: #8A2B22; }
+  button kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    opacity: .7;
+    margin-left: 5px;
+  }
+  /* 未保存のときだけ保存ボタンに点が付く */
+  #save::before {
+    content: '';
+    display: none;
+    width: 5px;
+    height: 5px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: #fff;
+    vertical-align: 1px;
+  }
+  body.dirty #save::before { display: inline-block; }
+
+  .note {
+    font-size: 11.5px;
+    color: var(--sub);
+    max-width: 34em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .note.warn { color: var(--warn); }
+  .note.bad { color: #8A2B22; }
+
+  /* ---------------- 三段組 ---------------- */
+
+  /* 同期の出力。走っているあいだと、失敗したときだけ出る */
+  #log {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0;
+    padding: 9px 14px;
+    max-height: 170px;
+    border-bottom: 1px solid var(--hair);
+    background: #F2F2EF;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.65;
+    color: var(--sub);
+    white-space: pre-wrap;
+    overflow-y: auto;
+  }
+  #log.bad { background: #FBF2F0; color: #7A2E24; }
+  #log-text { flex: 1; min-width: 0; }
+  #log-close {
+    flex: none;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    color: var(--faint);
+    font-size: 14px;
+    line-height: 1.2;
+  }
+  #log-close:hover { color: var(--ink); }
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* 一覧 */
+  aside {
+    border-right: 1px solid var(--hair);
+    background: var(--chrome);
+    overflow-y: auto;
+    padding: 10px 0 40px;
+  }
+  .day { padding: 0 0 6px; }
+  .day-label {
+    position: sticky;
+    top: 0;
+    padding: 8px 14px 3px;
+    background: var(--chrome);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: var(--faint);
+  }
+  .item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    padding: 5px 14px 6px;
+    cursor: pointer;
+    line-height: 1.45;
+  }
+  .item:hover { background: #EFEFEC; border-color: var(--hair-dark); }
+  .item[aria-current=true] { background: #E9EDF3; border-left-color: var(--navy); }
+  .item b {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: .06em;
+    color: var(--sub);
+  }
+  .item span {
+    display: block;
+    font-size: 12px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item span:empty::before { content: '（空）'; color: var(--faint); }
+  aside .empty { padding: 14px; color: var(--faint); font-size: 12px; }
+
+  /* 書くところ */
+  .edit { display: flex; flex-direction: column; min-width: 0; }
+  textarea {
+    flex: 1;
+    width: 100%;
+    border: 0;
+    resize: none;
+    padding: 22px 26px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    line-height: 2;
+    color: var(--ink);
+    background: var(--bg);
+    tab-size: 2;
+  }
+  textarea::placeholder { color: var(--faint); }
+  body.dropping textarea { background: #F3F6FA; }
+
+  details.help {
+    border-top: 1px solid var(--hair);
+    background: var(--chrome);
+    font-size: 11.5px;
+    color: var(--sub);
+    max-height: 45%;
+    overflow-y: auto;
+  }
+  details.help summary {
+    padding: 7px 14px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    color: var(--faint);
+  }
+  details.help dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 3px 14px;
+    margin: 0;
+    padding: 2px 16px 14px;
+  }
+  details.help dt { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+  details.help dd { margin: 0; }
+
+  /* プレビュー */
+  .preview {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--hair);
+    min-width: 0;
+  }
+  .pane-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    height: 30px;
+    border-bottom: 1px solid var(--hair);
+    background: var(--chrome);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    color: var(--faint);
+  }
+  .pane-head a { color: var(--sub); text-decoration: none; }
+  .pane-head a:hover { color: var(--navy); }
+  iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+  .preview .empty {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    color: var(--faint);
+    font-size: 12px;
+  }
+  [hidden] { display: none !important; }
+
+  /* 狭いときはプレビューを畳んで、書くところを広く取る */
+  @media (max-width: 1080px) {
+    main { grid-template-columns: 200px minmax(0, 1fr); }
+    .preview { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">書く</span>
+  <input type="date" id="date">
+  <input type="time" id="time">
+  <button id="now" title="いまの日付・時刻にする">いま</button>
+  <button id="new">新規</button>
+  <span class="spacer"></span>
+  <span class="note" id="note"></span>
+  <button id="del" class="danger" hidden>削除</button>
+  <button id="save" class="primary">保存<kbd>⌘S</kbd></button>
+  <span class="rule" id="sync-rule" hidden></span>
+  <button id="sync" title="ビルドして Cloudflare に上げる（npm run deploy と同じ）" hidden>同期</button>
+</header>
+
+<pre id="log" hidden><span id="log-text"></span><button id="log-close" title="閉じる">×</button></pre>
+
+<main>
+  <aside id="list"><div class="empty">読み込み中…</div></aside>
+
+  <section class="edit">
+    <textarea id="text" spellcheck="false" placeholder="空行で段落を区切る。写真はここにドラッグ＆ドロップ。"></textarea>
+    <details class="help">
+      <summary>記法</summary>
+      <dl>
+        <dt>空行</dt><dd>段落の区切り</dd>
+        <dt>![キャプション](img/14-59-13.png)</dt><dd>写真。ドラッグ＆ドロップか貼り付けで置ける。その日の img/ に入る</dd>
+        <dt>&gt; 引用文</dt><dd>引用。最後の行を <code>&gt; -- 出典</code> にすると出典が付く</dd>
+        <dt>- 項目</dt><dd>箇条書き</dd>
+        <dt>@追記 09.02</dt><dd>追記。続く行がその段落になる</dd>
+        <dt>@link URL</dt><dd>リンクカード。タイトルなどは OGP から取る</dd>
+        <dt>@youtube ID | 説明</dt><dd>YouTube 埋め込み</dd>
+        <dt>@music 共有リンク | 説明</dt><dd>Apple Music 埋め込み</dd>
+      </dl>
+    </details>
+  </section>
+
+  <section class="preview">
+    <div class="pane-head">
+      <span>プレビュー</span>
+      <span class="spacer"></span>
+      <a id="open" href="/" target="_blank" rel="noopener">別のタブで開く ↗</a>
+    </div>
+    <iframe id="frame" title="プレビュー" hidden></iframe>
+    <div class="empty" id="frame-empty">保存すると、ここに出る</div>
+  </section>
+</main>
+
+<script type="module">
+const $ = (s) => document.querySelector(s)
+const el = {
+  date: $('#date'), time: $('#time'), text: $('#text'), note: $('#note'),
+  list: $('#list'), save: $('#save'), del: $('#del'), frame: $('#frame'),
+  empty: $('#frame-empty'), open: $('#open'), sync: $('#sync'),
+  log: $('#log'), logText: $('#log-text'),
+}
+
+let dirty = false          // 編集欄が保存済みの中身と違う
+let target = { exists: false, text: '' }   // いま日付・時刻が指しているファイル
+let pendingOpen = null     // 未保存のまま別の記事を開こうとしたとき、二度目のクリックで進む
+let carried = false        // 書きかけの文章を、すでに本文のある時刻へ持ってきた（保存すると置き換わる）
+let flashTimer = null
+
+const pad = (n) => String(n).padStart(2, '0')
+const now = () => {
+  const d = new Date()
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  }
+}
+const dayUrl = () => '/' + el.date.value.replaceAll('-', '/') + '/'
+
+async function api(path, opts) {
+  const res = await fetch('/_write/' + path, opts)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.error || `${res.status} ${res.statusText}`)
+  return body
+}
+
+/* ---------------- 状態の表示 ---------------- */
+
+function flash(msg, kind) {
+  clearTimeout(flashTimer)
+  el.note.textContent = msg
+  el.note.className = 'note ' + (kind || '')
+  flashTimer = setTimeout(showState, 4000)
+}
+
+// 何もないときの右上の一言。本文を置き換えてしまう場面だけ色を変える。
+function showState() {
+  clearTimeout(flashTimer)
+  el.note.className = 'note'
+  if (carried && target.exists) {
+    el.note.className = 'note warn'
+    el.note.textContent = 'この時刻にはすでに別の本文がある。保存すると置き換わる'
+  } else if (!target.exists) {
+    el.note.textContent = dirty ? '新しい記事（未保存）' : '新しい記事'
+  } else {
+    el.note.textContent = dirty ? '編集中（未保存）' : '保存済み'
+  }
+  el.del.hidden = !target.exists
+  el.del.textContent = '削除'
+  el.del.dataset.armed = ''
+}
+
+function setDirty(v) {
+  dirty = v
+  document.body.classList.toggle('dirty', v)
+  showState()
+}
+
+function renderList(days) {
+  if (!days.length) {
+    el.list.innerHTML = '<div class="empty">まだ何もない</div>'
+    return
+  }
+  el.list.innerHTML = ''
+  for (const day of days) {
+    const box = document.createElement('div')
+    box.className = 'day'
+    const label = document.createElement('div')
+    label.className = 'day-label'
+    label.textContent = day.date.replaceAll('-', '.')
+    box.append(label)
+    for (const t of day.times) {
+      const item = document.createElement('button')
+      item.className = 'item'
+      item.dataset.date = day.date
+      item.dataset.time = t.time
+      item.setAttribute('aria-current', String(day.date === el.date.value && t.time === el.time.value))
+      const time = document.createElement('b')
+      time.textContent = t.time
+      const line = document.createElement('span')
+      line.textContent = t.excerpt
+      item.append(time, line)
+      item.addEventListener('click', () => open(day.date, t.time))
+      box.append(item)
+    }
+    el.list.append(box)
+  }
+}
+
+async function loadList() {
+  const { days } = await api('entries')
+  renderList(days)
+}
+
+/* ---------------- 記事を開く・移す ---------------- */
+
+// 一覧から開く。未保存の変更があるときは、もう一度押させて確かめる。
+async function open(date, time) {
+  const key = date + ' ' + time
+  if (dirty && pendingOpen !== key) {
+    pendingOpen = key
+    flash(`未保存の変更がある。${key} を開くなら、もう一度`, 'warn')
+    return
+  }
+  pendingOpen = null
+  carried = false
+  el.date.value = date
+  el.time.value = time
+  const entry = await api(`entry?date=${date}&time=${time}`)
+  target = entry
+  el.text.value = entry.text
+  setDirty(false)
+  updatePreview()
+  await loadList()
+  el.text.focus()
+}
+
+// 日付・時刻を変えたとき。書きかけの文章は保持して、行き先だけ移す。
+// ただし編集欄が空なら、その時刻の本文をそのまま開く。
+async function retarget() {
+  if (!el.date.value || !el.time.value) return
+  pendingOpen = null
+  try {
+    target = await api(`entry?date=${el.date.value}&time=${el.time.value}`)
+  } catch (e) {
+    flash(e.message, 'bad')
+    return
+  }
+  const same = el.text.value.replace(/\s+$/, '') === target.text.replace(/\s+$/, '')
+  if (!el.text.value.trim() && target.exists) {
+    el.text.value = target.text
+    carried = false
+    setDirty(false)
+  } else {
+    carried = target.exists && !same
+    setDirty(!same)
+  }
+  updatePreview()
+  await loadList()
+}
+
+function updatePreview() {
+  el.open.href = dayUrl()
+  el.frame.hidden = !target.exists
+  el.empty.hidden = target.exists
+  // ?t= はキャッシュ避け。サーバはクエリを見ないので日ページがそのまま出る。
+  if (target.exists) el.frame.src = dayUrl() + '?t=' + Date.now()
+  else el.frame.removeAttribute('src')
+}
+
+/* ---------------- 保存・削除 ---------------- */
+
+async function save() {
+  el.save.disabled = true
+  try {
+    const body = JSON.stringify({ date: el.date.value, time: el.time.value, text: el.text.value })
+    const res = await api('entry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    target = { exists: true, text: el.text.value.replace(/\s+$/, '') }
+    carried = false
+    setDirty(false)
+    updatePreview()
+    await loadList()
+    flash(`保存した（${res.at}）`)
+  } catch (e) {
+    flash(e.message, 'bad')
+  } finally {
+    el.save.disabled = false
+  }
+}
+
+// 一度目で身構えて、二度目で消す
+async function remove() {
+  if (el.del.dataset.armed !== '1') {
+    el.del.dataset.armed = '1'
+    el.del.textContent = '本当に削除'
+    flash(`${el.date.value} ${el.time.value} を削除する。取り消せない`, 'warn')
+    return
+  }
+  try {
+    const body = JSON.stringify({ date: el.date.value, time: el.time.value })
+    await api('entry', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body })
+    el.text.value = ''
+    target = { exists: false, text: '' }
+    carried = false
+    setDirty(false)
+    updatePreview()
+    await loadList()
+    flash('削除した')
+  } catch (e) {
+    flash(e.message, 'bad')
+  }
+}
+
+/* ---------------- 同期 ---------------- */
+
+function showLog(text, bad) {
+  el.log.hidden = false
+  el.log.classList.toggle('bad', !!bad)
+  el.logText.textContent = text
+  el.log.scrollTop = el.log.scrollHeight
+}
+
+// npm run deploy を走らせ、出力を一行ずつ受け取って出す。
+// 最後の一行だけが結果（--- ok / --- ng）で、それ以外は deploy.mjs の出力そのまま。
+async function sync() {
+  if (dirty && pendingOpen !== 'sync') {
+    pendingOpen = 'sync'
+    flash('未保存の変更がある。保存してから同期するか、もう一度', 'warn')
+    return
+  }
+  pendingOpen = null
+  el.sync.disabled = true
+  el.sync.textContent = '同期中…'
+  const lines = []
+  showLog('はじめている…')
+  try {
+    const res = await fetch('/_write/deploy', { method: 'POST' })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `${res.status} ${res.statusText}`)
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let rest = ''
+    let ok = false
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      rest += decoder.decode(value, { stream: true })
+      const parts = rest.split('\n')
+      rest = parts.pop()
+      for (const line of parts) {
+        if (line.startsWith('--- ')) { ok = line.trim() === '--- ok'; continue }
+        if (!line.trim()) continue
+        lines.push(line)
+        showLog(lines.join('\n'))
+        flash(line)
+      }
+    }
+    showLog(lines.join('\n'), !ok)
+    if (ok) {
+      flash(`同期した（${new Date().toTimeString().slice(0, 8)}）`)
+      setTimeout(() => { if (!el.log.classList.contains('bad')) el.log.hidden = true }, 6000)
+    } else {
+      flash('同期に失敗した', 'bad')
+    }
+  } catch (e) {
+    lines.push(e.message)
+    showLog(lines.join('\n'), true)
+    flash(e.message, 'bad')
+  } finally {
+    el.sync.disabled = false
+    el.sync.textContent = '同期'
+  }
+}
+
+/* ---------------- 写真 ---------------- */
+
+// 写真は一枚で一つの図になるので、前後を空行で挟んだ一行として入れる。
+function insertBlock(s) {
+  const t = el.text
+  const before = t.value.slice(0, t.selectionStart).replace(/\n+$/, '')
+  const after = t.value.slice(t.selectionEnd).replace(/^\n+/, '')
+  t.value = (before ? before + '\n\n' : '') + s + (after ? '\n\n' + after : '\n')
+  const pos = (before ? before.length + 2 : 0) + s.length
+  t.setSelectionRange(pos, pos)
+  t.focus()
+  setDirty(true)
+}
+
+async function upload(file) {
+  flash(`${file.name || '写真'} を置いている…`)
+  try {
+    // ファイル名はサーバがランダムに振る（連番にしない）ので、送るのは中身だけ
+    const res = await api(`image?date=${el.date.value}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type },
+      body: await file.arrayBuffer(),
+    })
+    insertBlock(`![](${res.ref})`)
+    flash(`${res.ref} を ${el.date.value} に置いた`)
+  } catch (e) {
+    flash(e.message, 'bad')
+  }
+}
+
+const imagesOf = (list) => [...list].filter((f) => f && /^image\/(jpeg|png)$/.test(f.type))
+
+/* ---------------- つなぎ込み ---------------- */
+
+el.save.addEventListener('click', save)
+el.del.addEventListener('click', remove)
+el.sync.addEventListener('click', sync)
+$('#log-close').addEventListener('click', () => { el.log.hidden = true })
+el.text.addEventListener('input', () => {
+  pendingOpen = null
+  setDirty(el.text.value.replace(/\s+$/, '') !== target.text.replace(/\s+$/, ''))
+})
+el.date.addEventListener('change', retarget)
+el.time.addEventListener('change', retarget)
+
+$('#now').addEventListener('click', () => {
+  const n = now()
+  el.date.value = n.date
+  el.time.value = n.time
+  retarget()
+})
+
+$('#new').addEventListener('click', async () => {
+  if (dirty && pendingOpen !== 'new') {
+    pendingOpen = 'new'
+    flash('未保存の変更がある。新規で始めるなら、もう一度', 'warn')
+    return
+  }
+  pendingOpen = null
+  const n = now()
+  el.date.value = n.date
+  el.time.value = n.time
+  el.text.value = ''
+  await retarget()
+  el.text.focus()
+})
+
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault()
+    save()
+  }
+})
+
+for (const type of ['dragenter', 'dragover']) {
+  el.text.addEventListener(type, (e) => {
+    if (!e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    document.body.classList.add('dropping')
+  })
+}
+for (const type of ['dragleave', 'dragend', 'drop']) {
+  el.text.addEventListener(type, () => document.body.classList.remove('dropping'))
+}
+el.text.addEventListener('drop', async (e) => {
+  const files = imagesOf(e.dataTransfer.files)
+  if (!files.length) return
+  e.preventDefault()
+  for (const f of files) await upload(f)
+})
+el.text.addEventListener('paste', async (e) => {
+  const files = imagesOf([...e.clipboardData.items].map((i) => i.getAsFile()))
+  if (!files.length) return
+  e.preventDefault()
+  for (const f of files) await upload(f)
+})
+
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) e.preventDefault()
+})
+
+// 起動時はいまの日付・時刻。すでに本文があればそれを開く。
+const n = now()
+el.date.value = n.date
+el.time.value = n.time
+await retarget()
+el.text.focus()
+
+// 同期は content/ を見ている確認サーバのときだけ出す
+const conf = await api('config').catch(() => ({}))
+el.sync.hidden = !conf.deploy
+$('#sync-rule').hidden = !conf.deploy
+</script>
+</body>
+</html>

@@ -470,12 +470,15 @@ async function build() {
   write('feed.xml', feedXml(entries));
   write('assets/style.css', fs.readFileSync(path.join(ROOT, 'assets', 'style.css')));
 
-  // 日ディレクトリの画像などを日ページの隣へコピー（md 以外すべて）
+  // 日ディレクトリの画像などを日ページの隣へコピー（md 以外すべて）。
+  // img/ のような下の階層もそのままの形で写す。
   for (const entry of entries) {
     const dir = path.join(CONTENT, dayDir(entry.iso));
-    for (const f of fs.readdirSync(dir)) {
-      if (f.endsWith('.md') || f.startsWith('.')) continue;
-      write(path.join(dayDir(entry.iso), f), fs.readFileSync(path.join(dir, f)));
+    for (const f of fs.readdirSync(dir, { recursive: true })) {
+      if (f.endsWith('.md') || path.basename(f).startsWith('.')) continue;
+      const src = path.join(dir, f);
+      if (!fs.statSync(src).isFile()) continue;
+      write(path.join(dayDir(entry.iso), f), fs.readFileSync(src));
     }
   }
 
@@ -489,16 +492,32 @@ await build();
 
 if (process.argv.includes('--watch')) {
   // 変更を 100ms でまとめて再ビルド。書きかけでパースに失敗しても watch は続ける。
+  // 書く画面はこの完了を待ってから保存を返すので、待てるように Promise を返す。
   let timer = null;
-  const rebuild = () => {
+  let waiting = [];
+  const rebuild = () => new Promise(resolve => {
+    waiting.push(resolve);
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      build().catch(e => console.error('build error:', e.message));
+    timer = setTimeout(async () => {
+      const done = waiting;
+      waiting = [];
+      await build().catch(e => console.error('build error:', e.message));
+      for (const r of done) r();
     }, 100);
-  };
+  });
   for (const target of [CONTENT, path.join(ROOT, 'assets'), path.join(ROOT, 'site.config.json')]) {
     fs.watch(target, { recursive: true }, rebuild);
   }
+
+  // 書く画面（/_write）。確認サーバのときだけ積む。
+  // 同期（deploy）は content/ → site/ を見ているときだけ。npm run ref の一時ディレクトリでは出さない。
+  const { editorHandler } = await import('./scripts/editor.mjs');
+  const editor = editorHandler({
+    content: CONTENT,
+    rebuild,
+    root: ROOT,
+    canDeploy: !process.env.HIBI_CONTENT && !process.env.HIBI_OUT,
+  });
 
   const MIME = {
     '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript',
@@ -506,8 +525,9 @@ if (process.argv.includes('--watch')) {
     '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8',
   };
   const port = Number(process.env.PORT) || 8888;
-  http.createServer((req, res) => {
+  http.createServer(async (req, res) => {
     const url = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    if (await editor(req, res, url)) return;
     let file = path.normalize(path.join(OUT, url));
     if (!file.startsWith(OUT + path.sep) && file !== OUT) { res.writeHead(403).end(); return; }
     if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
@@ -522,5 +542,6 @@ if (process.argv.includes('--watch')) {
       .end(fs.readFileSync(file));
   }).listen(port, () => {
     console.log(`watching ${rel(CONTENT)}/ assets/ site.config.json — http://localhost:${port}`);
+    console.log(`書く画面: http://localhost:${port}/_write`);
   });
 }
