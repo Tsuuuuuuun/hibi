@@ -1,0 +1,12 @@
+{
+  "name": "hibi",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "new": "node scripts/new.mjs",
+    "ref": "node scripts/ref.mjs",
+    "deploy": "node build.mjs && node scripts/deploy.mjs"
+  }
+}

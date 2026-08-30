@@ -1,0 +1,339 @@
+/* Diary v3 のモック（Diary v3.dc.html）を移植したスタイル。 */
+
+:root {
+  --ink: #17181A;
+  --sub: #6B7072;
+  --faint: #9AA09E;
+  --quote-ink: #3A3D40;
+  --hair: #EAEBE8;
+  --hair-dark: #C9CCC6;
+  --navy: #23406B;
+  --img-bg: #E0E2DD;
+  --bg: #FFFFFF;
+  --sans-frame: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic Medium', '游ゴシック Medium', 'YuGothic', '游ゴシック体', 'Meiryo', sans-serif;
+  --sans-body: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic Medium', '游ゴシック Medium', 'YuGothic', '游ゴシック体', 'Meiryo', sans-serif;
+  --serif: 'Shippori Mincho', serif;
+  --mono: 'Roboto Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans-frame);
+  line-height: 1.7;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+
+a { color: var(--navy); }
+a:hover { color: var(--ink); }
+
+.wrap {
+  max-width: calc(52em + 160px);
+  margin: 0 auto;
+  padding: 0 20px 120px;
+}
+
+/* 日ページ上部の「一覧へ」 */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 30px 0 -22px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .16em;
+  color: var(--sub);
+  text-decoration: none;
+}
+.back:hover { color: var(--ink); }
+
+/* 記事：左に日付、右に本文の二段組 */
+article {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 52em);
+  gap: 0 40px;
+  padding: 56px 0 60px;
+  justify-content: center;
+}
+
+.meta {
+  align-self: start;
+  position: sticky;
+  top: 24px;
+  padding-right: 40px;
+  margin-right: -40px;
+  min-height: 64px;
+}
+
+.datelink {
+  display: block;
+  text-decoration: none;
+  color: var(--ink);
+  border-bottom: 1px solid transparent;
+}
+a.datelink:hover {
+  color: var(--navy);
+  border-bottom-color: var(--navy);
+}
+
+.date {
+  display: block;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: .04em;
+  font-feature-settings: 'tnum';
+}
+
+.dow {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .24em;
+  color: var(--sub);
+}
+
+/* 本文 */
+.body {
+  font-family: var(--sans-body);
+  font-size: 16px;
+  line-height: 1.7;
+  letter-spacing: 0;
+}
+
+.seg { margin-top: 2em; }
+.seg:first-child { margin-top: 0; }
+
+.prose { max-width: 52em; }
+
+.prose time {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 .5em;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1;
+  letter-spacing: .14em;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.prose time::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--hair);
+}
+
+.prose p { margin: 0 0 1.1em; font-size: 16px; }
+
+/* 引用 */
+.prose blockquote {
+  margin: 0 0 1.2em;
+  padding: .1em 0 .1em 1.15em;
+  border-left: 1px solid var(--hair-dark);
+  font-family: var(--serif);
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--quote-ink);
+}
+.q-body { display: block; }
+.prose cite {
+  display: block;
+  margin-top: .5em;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: .06em;
+  color: var(--faint);
+}
+
+/* 箇条書き */
+.prose ul {
+  margin: 0 0 1.2em;
+  padding: 0 0 0 1em;
+  list-style: none;
+}
+.prose li { position: relative; margin: 0 0 .35em; }
+.prose li::before {
+  content: '・';
+  position: absolute;
+  left: -1em;
+  color: var(--faint);
+}
+
+/* 追記。罫線や見出し行は持たず、本文より一段小さい段落として続ける */
+.addendum { margin: 0 0 1.2em; }
+.addendum p {
+  margin: 0 0 .55em;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--quote-ink);
+}
+.addendum p:last-child { margin-bottom: 0; }
+.add-label {
+  margin-right: .55em;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* リンクカード */
+.card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: stretch;
+  margin: 0 0 1.3em;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--ink);
+  overflow: hidden;
+}
+.card--thumb { grid-template-columns: 1fr 120px; }
+.card:hover {
+  color: var(--ink);
+  border-color: var(--hair-dark);
+  background: #FAFAF8;
+}
+.card-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 11px 0 11px 14px;
+  min-width: 0;
+}
+.card-title {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: .01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-desc {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-site {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* サムネイルは絶対配置。行の高さはテキスト側だけで決まり、
+   縦長・正方形の大きな OGP 画像が来てもカードが伸びない */
+.card-thumb {
+  position: relative;
+  min-height: 64px;
+  background: var(--img-bg);
+}
+.card-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 埋め込み */
+.embed { margin: 0 0 1.3em; }
+.embed iframe { display: block; width: 100%; border: 0; }
+.embed-yt { aspect-ratio: 16 / 9; background: var(--img-bg); }
+.embed-am { height: 175px; background: transparent; overflow: hidden; }
+.embed-am--tall { height: 450px; }
+
+/* 写真。一枚につき一つの図で、本文の書いた位置に出る */
+.photos { margin: 1.5em 0 1.3em; }
+.photos img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--img-bg);
+}
+
+figcaption {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  color: var(--faint);
+  margin-top: .6em;
+  text-align: center;
+}
+
+/* 前後の移動 */
+.pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  border-top: 1px solid var(--ink);
+  padding-top: 20px;
+}
+.pager--day { margin-top: 48px; font-size: 13px; }
+.pager--month { margin-top: 8px; font-size: 14px; }
+.pager a, .pager .off {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: inherit;
+  letter-spacing: .04em;
+  color: var(--sub);
+  text-decoration: none;
+}
+.pager a:hover { color: var(--navy); }
+.pager .next { text-align: right; }
+.pager .off { opacity: .4; }
+.pager .k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .2em;
+  color: var(--faint);
+}
+
+/* 一段組（幅 681px を境に日付が本文の上へ移る） */
+@media (max-width: 680px) {
+  article {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px 40px;
+    padding: 26px 0 30px;
+    justify-content: stretch;
+  }
+  .meta {
+    position: static;
+    padding-right: 0;
+    margin-right: 0;
+    min-height: 0;
+  }
+  .datelink {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .dow { margin-top: 0; }
+  /* モバイルでも横並びを保ち、サムネイルだけ細くする */
+  .card--thumb { grid-template-columns: 1fr 96px; }
+}
+

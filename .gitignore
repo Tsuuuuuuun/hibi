@@ -1,0 +1,24 @@
+# コンテンツ
+content
+
+# ビルド生成物
+site/
+
+# キャッシュ
+.cache
+
+# macOS
+.DS_Store
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+
+# ログ
+*.log
+npm-debug.log*
+
+# 環境変数
+.env
+.env.local
