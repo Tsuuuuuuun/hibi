@@ -191,6 +191,27 @@ function firstImage(entry) {
   return null;
 }
 
+// 検索用。読める文字だけをブロックから拾って一本に繋ぐ。
+// 埋め込みは取得できた本文とキャプションだけ（iframe の中身は持っていない）。
+function entryText(entry) {
+  const out = [];
+  const push = s => { if (s) out.push(String(s).replace(INLINE_LINK, '$1')); };
+  for (const seg of entry.segs) {
+    for (const b of seg.blocks) {
+      switch (b.type) {
+        case 'p': push(b.text); break;
+        case 'quote': push(b.text); push(b.cite); break;
+        case 'list': b.items.forEach(push); break;
+        case 'add': push(`追記 ${b.date}`); b.paras.forEach(push); break;
+        case 'img': case 'yt': case 'am': push(b.cap); break;
+        case 'link': push(b.title); push(b.desc); push(b.site); break;
+        case 'x': push(b.post?.text); push(b.cap); break;
+      }
+    }
+  }
+  return out.join(' ');
+}
+
 // HTML から取り出した文字列を素のテキストに戻す。OGP と X の oEmbed で共用する
 const decodeEntities = s => s == null ? s : s
   .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
@@ -499,6 +520,15 @@ const X_SCRIPT = `<script>
 })();
 <\/script>`;
 
+// 検索。ページに常に見えているのは末尾の一語だけで、入力欄は押したとき（か「/」）に覆いとして出る。
+// 中身は /search.json を読んでブラウザ側で絞り込む（assets/search.js）。
+// ボタンは hidden にしてあり、スクリプトが動いたときだけ出る（JS が無いと引けないため）。
+const SEARCH_OPEN = `<footer class="foot"><button class="search-open" type="button" hidden>検索</button></footer>`;
+const SEARCH_DIALOG = `<dialog class="search" aria-label="本文を検索">` +
+  `<input class="search-input" type="search" placeholder="検索" aria-label="本文を検索"` +
+  ` autocomplete="off" autocapitalize="off" spellcheck="false">` +
+  `<div class="search-panel" hidden></div></dialog>`;
+
 function pageShell({ title, description, canonical, og, body }) {
   const head = [
     `<meta charset="utf-8">`,
@@ -515,6 +545,7 @@ function pageShell({ title, description, canonical, og, body }) {
     // Roboto Mono は 400 のみ（未使用の 500 を足すと @font-face が倍になり、その CSS は描画を止める）
     `<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Shippori+Mincho:wght@400&family=Roboto+Mono:wght@400&display=swap" rel="stylesheet">`,
     `<link rel="stylesheet" href="/assets/style.css">`,
+    `<script src="/assets/search.js" defer></script>`,
   ].filter(Boolean).join('\n');
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -524,7 +555,9 @@ ${head}
 <body>
 <div class="wrap">
 ${body}
+${SEARCH_OPEN}
 </div>
+${SEARCH_DIALOG}
 ${body.includes('class="embed embed-x"') ? X_SCRIPT + '\n' : ''}</body>
 </html>
 `;
@@ -595,6 +628,11 @@ function notFoundPageHtml() {
   });
 }
 
+// ブラウザ側で絞り込むための全文インデックス。日付と本文だけの小さな JSON。
+function searchIndex(entries) {
+  return JSON.stringify(entries.map(e => ({ d: e.iso, t: entryText(e) })));
+}
+
 function feedXml(entries) {
   const items = entries.slice(0, 30).map(e => `  <item>
     <title>${disp(e.iso)}</title>
@@ -651,7 +689,14 @@ async function build() {
 
   write('404.html', notFoundPageHtml());
   write('feed.xml', feedXml(entries));
-  write('assets/style.css', fs.readFileSync(path.join(ROOT, 'assets', 'style.css')));
+  write('search.json', searchIndex(entries));
+
+  const assets = path.join(ROOT, 'assets');
+  for (const f of fs.readdirSync(assets, { recursive: true })) {
+    const src = path.join(assets, f);
+    if (path.basename(f).startsWith('.') || !fs.statSync(src).isFile()) continue;
+    write(path.join('assets', f), fs.readFileSync(src));
+  }
 
   // 日ディレクトリの画像などを日ページの隣へコピー（md 以外すべて）。
   // img/ のような下の階層もそのままの形で写す。
@@ -705,7 +750,7 @@ if (process.argv.includes('--watch')) {
   const MIME = {
     '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript',
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml',
-    '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8',
+    '.xml': 'application/xml', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
   };
   const port = Number(process.env.PORT) || 8888;
   http.createServer(async (req, res) => {
