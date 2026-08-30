@@ -178,12 +178,12 @@ dialog.search::backdrop { background: rgba(23, 24, 26, .18); }
 /* 覆いが出ているあいだは後ろを動かさない */
 html:has(dialog.search[open]) { overflow: hidden; }
 
-/* 日ページ上部の「一覧へ」 */
+/* 日ページ上部の「一覧へ」。左端を本文に揃える（下の移動・検索と同じ寄せ） */
 .back {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 30px 0 -22px;
+  margin: 30px 0 -22px var(--body-indent);
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: .16em;
@@ -486,8 +486,8 @@ figcaption {
   text-align: center;
 }
 
-/* 前後の移動。日付の段のぶんだけ右へ寄せ、本文と左端・中心を揃える
-   （検索の一語が写真の説明と同じ中心に来る） */
+/* 前後の移動。上の「一覧へ」と同じく、日付の段のぶんだけ右へ寄せて
+   本文と左端・中心を揃える（検索の一語が写真の説明と同じ中心に来る） */
 .pager, .foot { margin-left: var(--body-indent); }
 
 .pager {
@@ -527,7 +527,7 @@ figcaption {
     justify-content: stretch;
   }
   /* 一段組では本文が囲いいっぱいなので、寄せは戻す */
-  .pager, .foot { margin-left: 0; }
+  .back, .pager, .foot { margin-left: 0; }
   .meta {
     position: static;
     padding-right: 0;
