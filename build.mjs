@@ -568,10 +568,23 @@ const X_SCRIPT = `<script>
 })();
 <\/script>`;
 
-// 検索。ページに常に見えているのは末尾の一語だけで、入力欄は押したとき（か「/」）に覆いとして出る。
-// 中身は /search.json を読んでブラウザ側で絞り込む（assets/search.js）。
-// ボタンは hidden にしてあり、スクリプトが動いたときだけ出る（JS が無いと引けないため）。
-const SEARCH_OPEN = `<footer class="foot"><button class="search-open" type="button" hidden>検索</button></footer>`;
+// 末尾の一行。ページに常に見えているのは「日付」「検索」の二語だけで、どちらも押すと覆いが出る。
+// 日付は記述のある日をカレンダーで出して移る（assets/jump.js、日の一覧は /days.json）。
+// 検索は /search.json を読んでブラウザ側で絞り込む（assets/search.js）。
+// どちらのボタンも hidden にしてあり、スクリプトが動いたときだけ出る（JS が無いと開けないため）。
+// あいだの中黒も hidden で、二語とも出たときだけ引く。
+const FOOT = `<footer class="foot"><span class="foot-nav">` +
+  `<button class="foot-item is-date jump-open" type="button" hidden>日付</button>` +
+  `<span class="foot-sep" hidden>·</span>` +
+  `<button class="foot-item is-search search-open" type="button" hidden>検索</button>` +
+  `</span></footer>`;
+
+const JUMP_DIALOG = `<dialog class="jump" aria-label="日付で移る">` +
+  `<div class="jump-head">` +
+  `<button class="jump-prev" type="button" aria-label="前の月">‹</button>` +
+  `<a class="jump-title"></a>` +
+  `<button class="jump-next" type="button" aria-label="次の月">›</button>` +
+  `</div><div class="jump-grid"></div></dialog>`;
 const SEARCH_DIALOG = `<dialog class="search" aria-label="本文を検索">` +
   `<input class="search-input" type="search" placeholder="検索" aria-label="本文を検索"` +
   ` autocomplete="off" autocapitalize="off" spellcheck="false">` +
@@ -596,6 +609,7 @@ function pageShell({ title, description, canonical, og, body }) {
     `<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&family=Shippori+Mincho:wght@400&family=Roboto+Mono:wght@400&display=swap" rel="stylesheet">`,
     `<link rel="stylesheet" href="/assets/style.css">`,
     `<script src="/assets/search.js" defer></script>`,
+    `<script src="/assets/jump.js" defer></script>`,
     // vt.js は defer にしない。pagereveal は最初の描画のときに飛んでくるので、
     // 解析の終わりまで待つ defer だと登録が間に合わず、行き先の記事に名前が付かない。
     `<script src="/assets/vt.js"></script>`,
@@ -608,9 +622,10 @@ ${head}
 <body>
 <div class="wrap">
 ${body}
-${SEARCH_OPEN}
+${FOOT}
 </div>
 ${SEARCH_DIALOG}
+${JUMP_DIALOG}
 ${body.includes('class="embed embed-x"') ? X_SCRIPT + '\n' : ''}</body>
 </html>
 `;
@@ -747,6 +762,8 @@ async function build() {
   write('404.html', notFoundPageHtml());
   write('feed.xml', feedXml(entries));
   write('search.json', searchIndex(entries));
+  // 日付ジャンプ用。カレンダーを描くのに要るのは日付だけで、全文を持つ search.json は重い。
+  write('days.json', JSON.stringify(entries.map(e => e.iso)));
 
   const assets = path.join(ROOT, 'assets');
   for (const f of fs.readdirSync(assets, { recursive: true })) {

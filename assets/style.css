@@ -66,26 +66,39 @@ a:hover { color: var(--ink); }
   padding: 0 20px 120px;
 }
 
-/* 検索。普段はページの末尾に一語あるだけ。押すか「/」で覆いが出る。
-   ボタンは JS が動いたときだけ出る（hidden を外すのは assets/search.js） */
+/* 末尾の二語。普段はこれだけで、押すとそれぞれの覆いが出る。
+   どちらも JS が動いたときだけ出る（hidden を外すのは assets/jump.js と assets/search.js） */
 .foot {
   margin-top: 22px;
   text-align: center;
 }
+.foot-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 15px;
+}
+.foot-sep {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--hair-dark);
+}
 
-.search-open {
+.foot-item {
   padding: 6px 0 6px 17px;
   border: 0;
   appearance: none;
   -webkit-appearance: none;
-  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239AA09E' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='6.8' cy='6.8' r='4.3'/%3E%3Cpath d='M10 10 14 14'/%3E%3C/svg%3E") left 52% / 12px 12px no-repeat;
+  background: transparent no-repeat left 52% / 12px 12px;
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: .2em;
   color: var(--faint);
+  text-decoration: none;
   cursor: pointer;
 }
-.search-open:hover { color: var(--ink); }
+.foot-item:hover { color: var(--ink); }
+.foot-item.is-date { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239AA09E' stroke-width='1.4' stroke-linecap='round'%3E%3Crect x='2.4' y='3.6' width='11.2' height='10' rx='1.6'/%3E%3Cpath d='M5.4 1.9 5.4 4.5'/%3E%3Cpath d='M10.6 1.9 10.6 4.5'/%3E%3Cpath d='M2.4 6.8 13.6 6.8'/%3E%3C/svg%3E"); }
+.foot-item.is-search { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239AA09E' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='6.8' cy='6.8' r='4.3'/%3E%3Cpath d='M10 10 14 14'/%3E%3C/svg%3E"); }
 
 /* 覆い。上寄せで出す（結果が伸びても入力欄の位置が動かない） */
 dialog.search {
@@ -175,8 +188,82 @@ dialog.search::backdrop { background: rgba(23, 24, 26, .18); }
   border-radius: 2px;
 }
 
+/* 日付で移る覆い。検索と同じ体裁で、幅だけ狭い */
+dialog.jump {
+  width: min(324px, calc(100vw - 32px));
+  max-width: none;
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 18px 50px rgba(23, 24, 26, .14);
+  overflow: hidden;
+}
+dialog.jump::backdrop { background: rgba(23, 24, 26, .18); }
+
+.jump-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--hair);
+}
+/* 月の見出しはその月の一覧へのリンク。囲いの中の飾りなので、下線は指したときだけ出す */
+.jump-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .18em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.jump-title:hover { text-decoration: underline; text-underline-offset: .3em; }
+.jump-prev, .jump-next {
+  padding: 2px 10px;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--faint);
+  cursor: pointer;
+}
+.jump-prev:hover, .jump-next:hover { color: var(--ink); }
+.jump-prev[disabled], .jump-next[disabled] { opacity: .28; cursor: default; }
+
+.jump-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 8px 10px 12px;
+}
+.jump-dow {
+  padding-bottom: 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--faint);
+  text-align: center;
+}
+/* 記述のある日だけが a。無い日（.d）は薄いまま押せない */
+.jump-grid a, .jump-grid .d {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 31px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-decoration: none;
+}
+.jump-grid .d { color: var(--hair-dark); }
+.jump-grid a { color: var(--ink); }
+.jump-grid a:hover { background: var(--hair); }
+.jump-grid a:focus-visible { outline: 1px solid var(--hair-dark); outline-offset: -1px; }
+.jump-grid a.is-here { background: var(--ink); color: var(--bg); }
+
 /* 覆いが出ているあいだは後ろを動かさない */
-html:has(dialog.search[open]) { overflow: hidden; }
+html:has(dialog.search[open]), html:has(dialog.jump[open]) { overflow: hidden; }
 
 /* 日ページ上部の「一覧へ」。左端を本文に揃える（下の移動・検索と同じ寄せ） */
 .back {
@@ -543,5 +630,6 @@ figcaption {
   /* モバイルでも横並びを保ち、サムネイルだけ細くする */
   .card--thumb { grid-template-columns: 1fr 96px; }
   dialog.search { margin-top: 8vh; max-height: calc(100vh - 16vh); }
+  dialog.jump { margin-top: 8vh; }
 }
 

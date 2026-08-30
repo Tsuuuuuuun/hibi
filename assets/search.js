@@ -9,6 +9,11 @@
   const panel = dlg.querySelector('.search-panel');
   trigger.hidden = false;
 
+  // 中黒は二語とも出たときだけ引く。どちらの script が後に走っても同じ結果になるよう両方から見る。
+  const sep = document.querySelector('.foot-sep');
+  const other = document.querySelector('.jump-open');
+  if (sep && other && !other.hidden) sep.hidden = false;
+
   const MAX = 40;     // 出す件数の上限
   const BEFORE = 24;  // 抜粋で当たりの前に残す文字数
   const LEN = 90;     // 抜粋の長さ
@@ -132,6 +137,7 @@
     if (!cmdK && !slash) return;
     const t = e.target;
     if (!dlg.open && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (!dlg.open && document.querySelector('dialog[open]')) return; // 別の覆いが出ているときは拾わない
     e.preventDefault();
     open();
   });
