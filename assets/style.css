@@ -35,6 +35,13 @@
   --sans-body: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic Medium', '游ゴシック Medium', 'YuGothic', '游ゴシック体', 'Meiryo', sans-serif;
   --serif: 'Shippori Mincho', serif;
   --mono: 'Roboto Mono', ui-monospace, monospace;
+
+  /* 二段組の寸法。日付の段・段のあいだ・本文の幅の三つで、
+     囲いの幅も、下の移動と検索の左端も、ここから決まる。 */
+  --meta-col: 120px;
+  --col-gap: 40px;
+  --body-col: 52em;
+  --body-indent: calc(var(--meta-col) + var(--col-gap));
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +61,7 @@ a { color: var(--navy); }
 a:hover { color: var(--ink); }
 
 .wrap {
-  max-width: calc(52em + 160px);
+  max-width: calc(var(--body-col) + var(--body-indent));
   margin: 0 auto;
   padding: 0 20px 120px;
 }
@@ -188,8 +195,8 @@ html:has(dialog.search[open]) { overflow: hidden; }
 /* 記事：左に日付、右に本文の二段組 */
 article {
   display: grid;
-  grid-template-columns: 120px minmax(0, 52em);
-  gap: 0 40px;
+  grid-template-columns: var(--meta-col) minmax(0, var(--body-col));
+  gap: 0 var(--col-gap);
   padding: 56px 0 60px;
   justify-content: center;
 }
@@ -198,8 +205,8 @@ article {
   align-self: start;
   position: sticky;
   top: 24px;
-  padding-right: 40px;
-  margin-right: -40px;
+  padding-right: var(--col-gap);
+  margin-right: calc(var(--col-gap) * -1);
   min-height: 64px;
 }
 
@@ -479,7 +486,10 @@ figcaption {
   text-align: center;
 }
 
-/* 前後の移動 */
+/* 前後の移動。日付の段のぶんだけ右へ寄せ、本文と左端・中心を揃える
+   （検索の一語が写真の説明と同じ中心に来る） */
+.pager, .foot { margin-left: var(--body-indent); }
+
 .pager {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -516,6 +526,8 @@ figcaption {
     padding: 26px 0 30px;
     justify-content: stretch;
   }
+  /* 一段組では本文が囲いいっぱいなので、寄せは戻す */
+  .pager, .foot { margin-left: 0; }
   .meta {
     position: static;
     padding-right: 0;
