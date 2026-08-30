@@ -266,6 +266,61 @@ a.datelink:hover {
 .embed-am { height: 175px; background: transparent; overflow: hidden; }
 .embed-am--tall { height: 450px; }
 
+/* X のポスト。まずカードが出て、iframe を読み込めたときだけ入れ替わる。
+   X の埋め込みは 550px を超えて広がらないので、図ごとその幅で止める */
+.embed-x { position: relative; max-width: 550px; }
+.embed-x .xcard { margin-bottom: 0; }
+/* 実際の高さは iframe 自身が postMessage で伝えてくるまで分からない。
+   ただし埋め込みは、実寸の高さを持って初めて高さを送ってくる（高さ 0 や
+   visibility:hidden では黙る）。そこで仮の高さを持たせ、カードの上に透明で重ねて読ませる。
+   高さが届いたらカードと入れ替え、伝わってきた高さを inline style で入れる。 */
+.embed-x-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 225px;
+  opacity: 0;
+  pointer-events: none;
+}
+.embed-x.is-live .embed-x-frame { position: static; opacity: 1; pointer-events: auto; }
+.embed-x.is-live .xcard { display: none; }
+
+.xcard {
+  display: block;
+  margin: 0 0 1.3em;
+  padding: 12px 14px 13px;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--ink);
+}
+.xcard:hover {
+  color: var(--ink);
+  border-color: var(--hair-dark);
+  background: #FAFAF8;
+}
+.xcard-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-bottom: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  color: var(--faint);
+}
+.xcard-mark { color: var(--sub); letter-spacing: .18em; }
+.xcard-date { margin-left: auto; font-variant-numeric: tabular-nums; }
+.xcard-body { display: block; font-size: 14px; line-height: 1.72; }
+.xcard-note {
+  display: block;
+  margin-top: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--faint);
+}
+
 /* 写真。一枚につき一つの図で、本文の書いた位置に出る */
 .photos { margin: 1.5em 0 1.3em; }
 .photos img {

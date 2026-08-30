@@ -114,6 +114,14 @@ function parseBlock(lines) {
     const isTrack = /[?&]i=\d/.test(url);
     return { type: 'am', url, cap: parts[1] || '', tall: parts.includes('tall') || !isTrack };
   }
+  if (/^@(?:x|twitter)\s/i.test(first)) {
+    const parts = first.replace(/^@(?:x|twitter)\s+/i, '').split('|').map(s => s.trim());
+    const id = tweetId(parts[0]);
+    if (!id) throw new Error(`@x にはポストの URL か ID を書く（"${first}" が読めない）`);
+    // 手書きの URL はハンドル入り。取得に失敗したときのリンク先として残す
+    const href = /^https?:\/\//.test(parts[0]) ? parts[0] : `https://x.com/i/status/${id}`;
+    return { type: 'x', id, href, cap: parts[1] || '' };
+  }
   if (/^@追記\s/.test(first)) {
     return { type: 'add', date: first.replace(/^@追記\s+/, ''), paras: lines.slice(1) };
   }
@@ -145,6 +153,11 @@ const monthLabel = key => {
   const [y, m] = key.split('-');
   return `${y}年${Number(m)}月`;
 };
+// x.com / twitter.com のポスト URL、または ID そのものから ID を取る
+const tweetId = s => /^\d+$/.test(s)
+  ? s
+  : s.match(/(?:twitter|x)\.com\/[^/]+\/status(?:es)?\/(\d+)/)?.[1] || '';
+
 // 画像は md と同じ日ディレクトリに置き、ファイル名で参照する。URL は日ページの隣になる
 const assetUrl = (src, iso) => /^https?:\/\//.test(src) ? src : dayPath(iso) + src;
 
@@ -165,6 +178,14 @@ function firstImage(entry) {
   }
   return null;
 }
+
+// HTML から取り出した文字列を素のテキストに戻す。OGP と X の oEmbed で共用する
+const decodeEntities = s => s == null ? s : s
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+  .replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '—')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 
 /* ---------------- リンクカードの OGP 取得 ---------------- */
 
@@ -219,23 +240,110 @@ async function fetchOgp(url) {
     const tag = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*>`, 'i'))?.[0];
     return tag?.match(/content=["']([^"']*)["']/)?.[1];
   };
-  const dec = s => s == null ? s : s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
-    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-
-  let image = dec(meta('og:image') || '');
+  let image = decodeEntities(meta('og:image') || '');
   if (image) {
     try { image = new URL(image, res.url).href; } catch { image = ''; } // 相対 URL を解決
   }
   return {
-    title: dec(meta('og:title')) || dec(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim()) || '',
-    desc: dec(meta('og:description') || meta('description')) || '',
-    site: dec(meta('og:site_name')) || hostname(res.url),
+    title: decodeEntities(meta('og:title')) || decodeEntities(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim()) || '',
+    desc: decodeEntities(meta('og:description') || meta('description')) || '',
+    site: decodeEntities(meta('og:site_name')) || hostname(res.url),
     image,
     fetchedAt: new Date().toISOString().slice(0, 10),
   };
+}
+
+/* ---------------- X ポストの取得 ---------------- */
+
+const X_CACHE_FILE = path.join(ROOT, '.cache', 'xpost.json');
+
+// ポストごとの取得結果をキャッシュする。ここで取った中身が、iframe を出せないときのカードになる。
+async function resolveXPosts(entries) {
+  const posts = entries.flatMap(e => e.segs).flatMap(s => s.blocks).filter(b => b.type === 'x');
+  if (!posts.length) return;
+  const cache = fs.existsSync(X_CACHE_FILE) ? JSON.parse(fs.readFileSync(X_CACHE_FILE, 'utf8')) : {};
+
+  const need = [...new Set(posts.filter(b => !(b.id in cache)).map(b => b.id))];
+  let fetched = 0;
+  await Promise.all(need.map(async id => {
+    try {
+      cache[id] = await fetchXPost(id);
+      fetched++;
+    } catch (e) {
+      console.warn(`x: 取得失敗 ${id}（${e.message}）。カードは URL だけになる`);
+    }
+  }));
+  if (fetched) {
+    fs.mkdirSync(path.dirname(X_CACHE_FILE), { recursive: true });
+    fs.writeFileSync(X_CACHE_FILE, JSON.stringify(cache, null, 2) + '\n');
+  }
+
+  // 一度取れたポストは、あとで消されてもキャッシュに残る。カードとしては読めるままになる。
+  for (const b of posts) b.post = cache[b.id] || null;
+}
+
+// oEmbed は本文・表示名・ハンドル・日付だけを返す。画像と動画は入ってこない。
+async function fetchXPost(id) {
+  const api = 'https://publish.twitter.com/oembed?omit_script=1&dnt=true&lang=ja&url=' +
+    encodeURIComponent(`https://twitter.com/i/status/${id}`);
+  const res = await fetch(api, { redirect: 'follow', signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`); // 消されたポスト・非公開アカウントは 404
+  const json = await res.json();
+  const html = String(json.html || '');
+
+  const bodyHtml = html.match(/<p[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? '';
+  // 日付は blockquote 末尾のリンク。lang=ja なので「2006年3月21日」で来る
+  const dateText = html.match(/<a href="[^"]*"[^>]*>([^<]*)<\/a>\s*<\/blockquote>/)?.[1] ?? '';
+  const dm = dateText.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  const date = dm ? `${dm[1]}.${dm[2].padStart(2, '0')}.${dm[3].padStart(2, '0')}` : '';
+
+  // 本文中のリンクは t.co の短縮 URL で来る。読めないので元の URL に戻す
+  const tco = [...new Set([...bodyHtml.matchAll(/href="(https:\/\/t\.co\/\w+)"/g)].map(m => m[1]))];
+  const expanded = new Map(await Promise.all(tco.map(async u => [u, await expandTco(u)])));
+
+  let media = false;
+  const text = decodeEntities(bodyHtml
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<a href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g, (_, href, label) => {
+      // 画像・動画への pic リンクは中身が出せないので落とし、あることだけ note に残す
+      if (/^pic\.(?:twitter|x)\.com\//.test(label)) { media = true; return ''; }
+      if (!/^https:\/\/t\.co\//.test(href)) return label; // ハッシュタグ・メンションは文字のまま
+      const full = expanded.get(href);
+      if (!full) return label;
+      // ポスト本文では URL が直前の語にくっついていることがある。展開すると読めなくなるので離す
+      return ' ' + full.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    })
+    .replace(/<[^>]+>/g, ''))
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+
+  return {
+    name: json.author_name || '',
+    handle: json.author_url ? '@' + json.author_url.split('/').pop() : '',
+    url: json.url || `https://x.com/i/status/${id}`,
+    date,
+    text,
+    media,
+    fetchedAt: new Date().toISOString().slice(0, 10),
+  };
+}
+
+// t.co は本文を持たないリダイレクトなので、Location を辿るだけでよい
+async function expandTco(url) {
+  let current = url;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
+      const next = res.headers.get('location');
+      if (!next) return current === url ? '' : current;
+      current = new URL(next, current).href;
+      if (!/^https?:\/\/t\.co\//.test(current)) return current;
+    } catch {
+      return '';
+    }
+  }
+  return current;
 }
 
 /* ---------------- レンダリング ---------------- */
@@ -281,6 +389,29 @@ function renderBlock(b, iso) {
         ` allow="autoplay *; encrypted-media *; clipboard-write"` +
         ` sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-storage-access-by-user-activation allow-top-navigation-by-user-activation"></iframe>` +
         (b.cap ? `<figcaption>${esc(b.cap)}</figcaption>` : '') + `</figure>`;
+    case 'x': {
+      // HTML に入るのはカードのほう。iframe は読み込めたときだけ、スクリプトが上に載せる。
+      // JS を切っていても、X に繋がらなくても、ポストが消えても、このカードが残る。
+      const p = b.post;
+      const href = p?.url || b.href;
+      // 取得できていればハンドルはそこから。駄目なら書かれた URL から拾う
+      // （ID だけで書いたときの /i/status/ は誰のものでもないので拾わない）
+      const fromHref = b.href.match(/(?:twitter|x)\.com\/([^/]+)\/status/)?.[1] ?? '';
+      const handle = p?.handle || (fromHref === 'i' ? '' : fromHref);
+      const head = `<span class="xcard-head"><span class="xcard-mark">X</span>` +
+        (handle ? `<span>${esc(handle.startsWith('@') ? handle : '@' + handle)}</span>` : '') +
+        (p?.date ? `<span class="xcard-date">${esc(p.date)}</span>` : '') + `</span>`;
+      const text = p?.text
+        ? esc(p.text).replace(/\n/g, '<br>')
+        : esc(href); // 取得に失敗したときは URL だけのカードになる
+      return `<figure class="embed embed-x" data-x-id="${esc(b.id)}"` +
+        ` data-x-title="${esc(b.cap || 'X のポスト')}">` +
+        `<a class="xcard" href="${esc(href)}" target="_blank" rel="noopener">` +
+        `${head}<span class="xcard-body">${text}</span>` +
+        (p?.media ? `<span class="xcard-note">画像・動画あり — X で見る</span>` : '') +
+        `</a>` +
+        (b.cap ? `<figcaption>${esc(b.cap)}</figcaption>` : '') + `</figure>`;
+    }
   }
 }
 
@@ -317,6 +448,45 @@ function pagerItem(target, key, dir) {
   return `<a${next ? ' class="next"' : ''} href="${target.href}">${k}<span>${esc(target.label)}</span></a>`;
 }
 
+// X の埋め込み iframe は高さが決まっていない。iframe 自身が postMessage で高さを伝えてくるので、
+// それを受け取ってから表に出す。受け取れなければカードのままにする。
+// 埋め込みが高さを送ってくるのは実寸の高さがあるときだけで、visibility:hidden や高さ 0 では黙る。
+// そのため仮の高さを持たせたまま、カードの上に opacity:0 で重ねて読み込ませる（CSS 側を参照）。
+const X_SCRIPT = `<script>
+(() => {
+  const figs = [...document.querySelectorAll('.embed-x[data-x-id]')];
+  if (!figs.length) return;
+  const frames = new Map();
+  addEventListener('message', e => {
+    if (e.origin !== 'https://platform.twitter.com') return;
+    const call = e.data && e.data['twttr.embed'];
+    if (!call || !/resize/.test(call.method || '')) return;
+    const height = call.params && call.params[0] && call.params[0].height;
+    if (!height) return;
+    for (const [fig, frame] of frames) {
+      if (frame.contentWindow === e.source) {
+        frame.style.height = height + 'px';
+        fig.classList.add('is-live');
+      }
+    }
+  });
+  const load = fig => {
+    const frame = document.createElement('iframe');
+    frame.className = 'embed-x-frame';
+    frame.title = fig.dataset.xTitle || 'X';
+    frame.src = 'https://platform.twitter.com/embed/Tweet.html?id=' +
+      encodeURIComponent(fig.dataset.xId) + '&theme=light&dnt=true&lang=ja&hideThread=true';
+    fig.prepend(frame);
+    frames.set(fig, frame);
+  };
+  // 画面に近づくまで X には何も取りに行かない
+  const io = new IntersectionObserver((es, obs) => {
+    for (const en of es) if (en.isIntersecting) { obs.unobserve(en.target); load(en.target); }
+  }, { rootMargin: '400px' });
+  figs.forEach(fig => io.observe(fig));
+})();
+<\/script>`;
+
 function pageShell({ title, description, canonical, og, body }) {
   const head = [
     `<meta charset="utf-8">`,
@@ -343,7 +513,7 @@ ${head}
 <div class="wrap">
 ${body}
 </div>
-</body>
+${body.includes('class="embed embed-x"') ? X_SCRIPT + '\n' : ''}</body>
 </html>
 `;
 }
@@ -451,6 +621,7 @@ async function build() {
   const entries = collectEntries();
   if (!entries.length) throw new Error('content/ に日記ファイルがない');
   await resolveLinkCards(entries);
+  await resolveXPosts(entries);
   const monthKeys = [...new Set(entries.map(e => e.iso.slice(0, 7)))];
 
   fs.rmSync(OUT, { recursive: true, force: true });
