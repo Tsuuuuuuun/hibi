@@ -509,7 +509,7 @@ figcaption {
   text-decoration: none;
 }
 .pager a:hover { color: var(--navy); }
-.pager .next { text-align: right; }
+.pager .right { text-align: right; }
 .pager .off { opacity: .4; }
 .pager .k {
   font-family: var(--mono);

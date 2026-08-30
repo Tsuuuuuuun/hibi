@@ -10,6 +10,7 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CONTENT = path.resolve(ROOT, process.env.HIBI_CONTENT || 'content');
 const OUT = path.resolve(ROOT, process.env.HIBI_OUT || 'site');
 let config; // build() のたびに site.config.json から読み直す
+let homeDay; // 最新の日。/ はこの日のページと同じ内容になる（assets/vt.js が / を日として読むために head へ出す）
 
 // ログ用。ROOT の外（npm run ref の一時ディレクトリ）は絶対パスのまま出す。
 const rel = p => p.startsWith(ROOT + path.sep) ? path.relative(ROOT, p) : p;
@@ -70,7 +71,9 @@ function collectEntries() {
       }
     }
   }
-  return entries.sort((a, b) => b.iso.localeCompare(a.iso)); // 新しい日から
+  // 暦順（古い日から）。一日の中の時刻が昇順なので、日と日のあいだも同じ向きに揃える。
+  // 新着順が要るのは feed と検索だけで、そこは使う側で反転する。
+  return entries.sort((a, b) => a.iso.localeCompare(b.iso));
 }
 
 function subdirs(dir, re) {
@@ -517,11 +520,13 @@ function renderArticle(entry, { linkDate }) {
   }</div></article>`;
 }
 
-function pagerItem(target, key, dir) {
-  const k = `<span class="k">${dir === 'prev' ? `← ${key}` : `${key} →`}</span>`;
-  const next = dir === 'next' ? ' next' : '';
-  if (!target) return `<span class="off${next}">${k}<span>—</span></span>`;
-  return `<a${next ? ' class="next"' : ''} href="${target.href}">${k}<span>${esc(target.label)}</span></a>`;
+// 縦の並びが暦順（月ページなら 1 日が上、31 日が下）なので、ページャも同じ向きに揃える。
+// 左が過去、右が未来。カレンダーの繰り方と同じ。
+function pagerItem(target, key, side) {
+  const k = `<span class="k">${side === 'left' ? `← ${key}` : `${key} →`}</span>`;
+  const right = side === 'right' ? ' right' : '';
+  if (!target) return `<span class="off${right}">${k}<span>—</span></span>`;
+  return `<a${right ? ' class="right"' : ''} href="${target.href}">${k}<span>${esc(target.label)}</span></a>`;
 }
 
 // X の埋め込み iframe は高さが決まっていない。iframe 自身が postMessage で高さを伝えてくるので、
@@ -576,6 +581,8 @@ function pageShell({ title, description, canonical, og, body }) {
   const head = [
     `<meta charset="utf-8">`,
     `<meta name="viewport" content="width=device-width, initial-scale=1">`,
+    // / は最新の日ページの写しなので、パスからは日が読めない。vt.js がその対応を知るために置く。
+    `<meta name="home-day" content="${homeDay}">`,
     `<title>${esc(title)}</title>`,
     description ? `<meta name="description" content="${esc(description)}">` : '',
     canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
@@ -611,16 +618,17 @@ ${body.includes('class="embed embed-x"') ? X_SCRIPT + '\n' : ''}</body>
 
 /* ---------------- ページ生成 ---------------- */
 
-function monthPageHtml(entries, monthKeys, key, { canonical }) {
+function monthPageHtml(entries, monthKeys, key) {
   const mi = monthKeys.indexOf(key);
   const inMonth = entries.filter(e => e.iso.slice(0, 7) === key);
-  const nav = (k, dir) =>
-    pagerItem(k ? { href: monthPath(k), label: monthLabel(k) } : null, dir === 'prev' ? '前の月' : '次の月', dir);
+  const canonical = config.baseUrl + monthPath(key);
+  const nav = (k, side) =>
+    pagerItem(k ? { href: monthPath(k), label: monthLabel(k) } : null, side === 'left' ? '前の月' : '次の月', side);
   const body =
     `<main>${inMonth.map(e => renderArticle(e, { linkDate: true })).join('\n')}</main>\n` +
-    `<nav class="pager pager--month" aria-label="月の移動">${nav(monthKeys[mi + 1], 'prev')}${nav(monthKeys[mi - 1], 'next')}</nav>`;
+    `<nav class="pager pager--month" aria-label="月の移動">${nav(monthKeys[mi - 1], 'left')}${nav(monthKeys[mi + 1], 'right')}</nav>`;
   return pageShell({
-    title: canonical === config.baseUrl + '/' ? config.title : `${monthLabel(key)} | ${config.title}`,
+    title: `${monthLabel(key)} | ${config.title}`,
     canonical,
     og: [
       `<meta property="og:type" content="website">`,
@@ -637,12 +645,12 @@ function dayPageHtml(entries, entry) {
   const url = config.baseUrl + dayPath(entry.iso);
   const description = excerpt(entry);
   const image = firstImage(entry);
-  const nav = (e, dir) =>
-    pagerItem(e ? { href: dayPath(e.iso), label: `${disp(e.iso)} ${dow(e.iso)}` } : null, dir === 'prev' ? '前の日' : '次の日', dir);
+  const nav = (e, side) =>
+    pagerItem(e ? { href: dayPath(e.iso), label: `${disp(e.iso)} ${dow(e.iso)}` } : null, side === 'left' ? '前の日' : '次の日', side);
   const body =
     `<a class="back" href="${monthPath(monthKey)}">← ${esc(monthLabel(monthKey))}の一覧へ</a>\n` +
     `<main>${renderArticle(entry, { linkDate: false })}</main>\n` +
-    `<nav class="pager pager--day" aria-label="日の移動">${nav(entries[idx + 1], 'prev')}${nav(entries[idx - 1], 'next')}</nav>`;
+    `<nav class="pager pager--day" aria-label="日の移動">${nav(entries[idx - 1], 'left')}${nav(entries[idx + 1], 'right')}</nav>`;
   return pageShell({
     title: `${disp(entry.iso)} | ${config.title}`,
     description,
@@ -665,7 +673,7 @@ function notFoundPageHtml() {
     `<span class="date">404</span><span class="dow">NOT FOUND</span>` +
     `</span></div><div class="body"><div class="seg"><div class="prose">` +
     `<p>そのページはありません。</p>` +
-    `<p><a href="/">最新の月の一覧へ</a></p>` +
+    `<p><a href="/">最新の日へ</a></p>` +
     `</div></div></div></article></main>`;
   return pageShell({
     title: `404 | ${config.title}`,
@@ -675,12 +683,14 @@ function notFoundPageHtml() {
 }
 
 // ブラウザ側で絞り込むための全文インデックス。日付と本文だけの小さな JSON。
+// 新しい日から並べる（search.js は当たったうちの先頭から上限までしか出さない）。
 function searchIndex(entries) {
-  return JSON.stringify(entries.map(e => ({ d: e.iso, t: entryText(e) })));
+  return JSON.stringify([...entries].reverse().map(e => ({ d: e.iso, t: entryText(e) })));
 }
 
+// 新しい日から 30 件。
 function feedXml(entries) {
-  const items = entries.slice(0, 30).map(e => `  <item>
+  const items = [...entries].reverse().slice(0, 30).map(e => `  <item>
     <title>${disp(e.iso)}</title>
     <link>${config.baseUrl}${dayPath(e.iso)}</link>
     <guid>${config.baseUrl}${dayPath(e.iso)}</guid>
@@ -720,15 +730,15 @@ async function build() {
   await resolveXPosts(entries);
   await resolveRemoteImages(entries);
   const monthKeys = [...new Set(entries.map(e => e.iso.slice(0, 7)))];
+  homeDay = entries.at(-1).iso;
 
   fs.rmSync(OUT, { recursive: true, force: true });
 
   for (const key of monthKeys) {
-    write(monthPath(key).slice(1) + 'index.html',
-      monthPageHtml(entries, monthKeys, key, { canonical: config.baseUrl + monthPath(key) }));
+    write(monthPath(key).slice(1) + 'index.html', monthPageHtml(entries, monthKeys, key));
   }
-  // トップは最新の月と同じ内容。正規 URL は月ページに向ける。
-  write('index.html', monthPageHtml(entries, monthKeys, monthKeys[0], { canonical: config.baseUrl + '/' }));
+  // トップは最新の日ページと同じ内容。一覧は上の「一覧へ」から辿る。正規 URL は日ページに向ける。
+  write('index.html', dayPageHtml(entries, entries.at(-1)));
 
   for (const entry of entries) {
     write(dayPath(entry.iso).slice(1) + 'index.html', dayPageHtml(entries, entry));

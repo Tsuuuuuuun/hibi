@@ -12,9 +12,13 @@
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
 
   // /2026/08/30/ → 2026-08-30。月ページや 404 は null。
+  // / は最新の日ページの写しなので、パスからは日が読めない。どの日かは head の home-day から取る。
+  const HOME = document.head.querySelector('meta[name="home-day"]')?.content || '';
   const dayOf = url => {
     if (!url) return null;
-    const m = new URL(url, location.href).pathname.match(/^\/(\d{4})\/(\d{2})\/(\d{2})\/$/);
+    const p = new URL(url, location.href).pathname;
+    if (p === '/') return HOME || null;
+    const m = p.match(/^\/(\d{4})\/(\d{2})\/(\d{2})\/$/);
     return m ? m.slice(1).join('-') : null;
   };
 
