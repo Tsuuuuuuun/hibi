@@ -146,3 +146,6 @@ html:has(dialog.edit[open]) { overflow: hidden; }
 .edit-foot .edit-delete:hover { border-color: #B23A3A; }
 .edit-foot .edit-delete.is-armed { background: #B23A3A; color: var(--bg); border-color: #B23A3A; }
 .edit-note.is-warn { color: #B23A3A; white-space: normal; }
+
+/* 写真を落とすあいだは本文欄の地を変える（_write と同じ色） */
+dialog.edit.is-dropping .edit-text { background: #F3F6FA; }

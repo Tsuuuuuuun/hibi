@@ -51,9 +51,13 @@
     '<textarea class="edit-text" rows="6" placeholder="いま思ったこと" autocapitalize="off"></textarea>' +
     '<div class="edit-foot">' +
     '<span class="edit-left"><button type="button" class="edit-close">閉じる</button>' +
+    '<button type="button" class="edit-photo">写真</button>' +
     '<button type="button" class="edit-delete" hidden>削除</button></span>' +
     '<button type="button" class="edit-submit">投稿</button>' +
-    '</div></form>'
+    '</div>' +
+    // iOS では写真ピッカーが開き、カメラを選べばそのまま撮れる。JPEG と PNG だけ（build.mjs が寸法を読めるもの）
+    '<input type="file" class="edit-file" accept="image/jpeg,image/png" multiple hidden>' +
+    '</form>'
   document.body.append(fab, dlg)
 
   const el = {
@@ -61,6 +65,8 @@
     note: dlg.querySelector('.edit-note'),
     text: dlg.querySelector('.edit-text'),
     close: dlg.querySelector('.edit-close'),
+    photo: dlg.querySelector('.edit-photo'),
+    file: dlg.querySelector('.edit-file'),
     del: dlg.querySelector('.edit-delete'),
     submit: dlg.querySelector('.edit-submit'),
   }
@@ -93,6 +99,7 @@
     busy = on
     el.submit.disabled = on
     el.del.disabled = on
+    el.photo.disabled = on
   }
   const disarm = () => {
     armed = false
@@ -183,6 +190,78 @@
       setBusy(false)
     }
   }
+
+  /* ---------------- 写真 ---------------- */
+
+  // 写真は一枚で一つの図になるので、前後を空行で挟んだ一行として入れる（_write と同じ）
+  function insertBlock(s) {
+    const t = el.text
+    const before = t.value.slice(0, t.selectionStart).replace(/\n+$/, '')
+    const after = t.value.slice(t.selectionEnd).replace(/^\n+/, '')
+    t.value = (before ? before + '\n\n' : '') + s + (after ? '\n\n' + after : '\n')
+    const pos = (before ? before.length + 2 : 0) + s.length
+    t.setSelectionRange(pos, pos)
+    t.focus()
+  }
+
+  // 置き先の日。編集なら対象の日、新規なら今日（実際の書き込み先はサーバが決めるが、
+  // 日付をまたぐ瞬間に入れた写真だけ本文と別の日に置かれうる。稀なので初版では扱わない）。
+  const photoDate = () => {
+    if (target) return hereDay
+    const d = new Date()
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
+  const imagesOf = (list) => [...list].filter((f) => f && /^image\/(jpeg|png)$/.test(f.type))
+
+  async function upload(files) {
+    if (busy || !files.length) return
+    setBusy(true)
+    try {
+      for (const [i, file] of files.entries()) {
+        note(files.length > 1 ? `写真を置いている…（${i + 1}/${files.length}）` : '写真を置いている…')
+        // ファイル名はサーバが時刻で振るので、送るのは中身だけ
+        const res = await api(`image?date=${photoDate()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': file.type },
+          body: await file.arrayBuffer(),
+        })
+        insertBlock(`![](${res.ref})`)
+      }
+      note('')
+    } catch (e) {
+      note(e.message, 'ng')
+    } finally {
+      setBusy(false)
+      el.file.value = ''
+    }
+  }
+
+  el.photo.addEventListener('click', () => el.file.click())
+  el.file.addEventListener('change', () => upload(imagesOf(el.file.files)))
+  // デスクトップではドラッグ＆ドロップと貼り付けも受ける
+  for (const type of ['dragenter', 'dragover']) {
+    el.text.addEventListener(type, (e) => {
+      if (!e.dataTransfer.types.includes('Files')) return
+      e.preventDefault()
+      dlg.classList.add('is-dropping')
+    })
+  }
+  for (const type of ['dragleave', 'dragend', 'drop']) {
+    el.text.addEventListener(type, () => dlg.classList.remove('is-dropping'))
+  }
+  el.text.addEventListener('drop', (e) => {
+    const files = imagesOf(e.dataTransfer.files)
+    if (!files.length) return
+    e.preventDefault()
+    upload(files)
+  })
+  el.text.addEventListener('paste', (e) => {
+    const files = imagesOf([...e.clipboardData.items].map((i) => i.getAsFile()))
+    if (!files.length) return
+    e.preventDefault()
+    upload(files)
+  })
 
   /* ---------------- 操作 ---------------- */
 
