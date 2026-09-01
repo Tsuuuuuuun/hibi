@@ -247,9 +247,13 @@ Worker 名は既定で `hibi`。`--name` か `HIBI_WORKER_NAME` で変えられ�
 - 手元で消したファイルは R2 から消さない。消しても戻せる場所にしておくため。上書きした前の版は残らない（R2 にバージョニングは無い）
 
 ```sh
-npm run backup                     # 変わったものだけ上げる
-node scripts/backup.mjs --dry-run  # 上げるはずのものを出すだけ
+npm run backup                            # 変わったものだけ上げる
+node scripts/backup.mjs --dry-run         # 上げるはずのものを出すだけ
+node scripts/backup.mjs --pull            # 逆向き。R2 を正として content/ を揃える
+node scripts/backup.mjs --pull --dry-run  # 書くはずのものを出すだけ
 ```
+
+`--pull` は新しい機械で `content/` を戻すためのもの。R2 にあって手元に無い、または中身が違うものを書き、手元にだけあるものには触らない。手元と R2 の両方にあって違うときは R2 の側で上書きするので、手元の版を残したければ先に `npm run backup` で上げておく。
 
 同期（`npm run deploy`、書く画面の **同期**）は公開のあとにこれを走らせる。写しに失敗したときは公開は済んだうえで赤く終わる。`HIBI_R2_BACKUP_BUCKET` が無ければ飛ばす。
 

@@ -3,6 +3,7 @@
 //
 //   node scripts/backup.mjs             → 変わったファイルだけ上げる
 //   node scripts/backup.mjs --dry-run   → 上げるはずのものを出して終わる（LIST はする、PUT はしない）
+//   node scripts/backup.mjs --pull      → 逆向き。R2 にあって手元に無い・違うものを content/ に書く（--dry-run も効く）
 //
 // content/ は gitignore されていて履歴がどこにもないので、ここが唯一の写し。
 // 置き先は写真（HIBI_R2_BUCKET）とは別のバケット HIBI_R2_BACKUP_BUCKET。
@@ -11,8 +12,9 @@
 // キーは content/ からの相対パスそのまま（content/2026/08/30/14-59.md）。
 // R2 の LIST が返す etag は単一 PUT なら中身の MD5 なので、手元の MD5 と比べて違うものだけ送る。
 // 手元で消したファイルは R2 から消さない。消しても戻せる場所にしておくため。
+// --pull はその逆で、R2 を正として手元を揃える。手元にだけあるファイルは消さない（消し間違いを伝播させない）。
 
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join, resolve, dirname, extname, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -68,6 +70,22 @@ async function call(r2, path, { method = 'GET', body, headers = {} } = {}) {
   return json
 }
 
+// 中身をそのまま返す（JSON ではない）。失敗したときだけ JSON のエラーが返る。
+async function getObject(r2, key) {
+  const res = await fetch(`${API}/accounts/${r2.accountId}/r2/buckets/${r2.bucket}/objects/${key}`, {
+    headers: { authorization: `Bearer ${r2.token}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let errs = text.slice(0, 200)
+    try {
+      errs = (JSON.parse(text).errors || []).map((e) => `${e.code}: ${e.message}`).join(', ') || errs
+    } catch {}
+    throw new Error(`GET ${key} が失敗（${res.status}）${errs}`)
+  }
+  return Buffer.from(await res.arrayBuffer())
+}
+
 // R2 にあるものの MD5。1000 件ずつ、cursor が尽きるまで。
 async function remoteHashes(r2) {
   const hashes = new Map()
@@ -120,16 +138,57 @@ export async function backup(r2, { content = join(root, 'content'), dryRun = fal
   return { changed: changed.length, unchanged }
 }
 
+// 逆向き。R2 にあって手元に無い・中身が違うものを content/ に書く。手元にだけあるものには触らない。
+// content/ が無ければ作る（新しい機械で最初に走らせる用途）。
+export async function pull(r2, { content = join(root, 'content'), dryRun = false, log = console.log } = {}) {
+  const remote = await remoteHashes(r2)
+  const plan = []
+  let unchanged = 0
+  for (const [key, etag] of remote) {
+    const rel = key.slice(PREFIX.length)
+    // キーはこちらが書いたものだが、content/ の外に書かされないことだけは確かめる
+    if (!key.startsWith(PREFIX) || !rel || rel.split('/').some((p) => p === '' || p === '..')) {
+      throw new Error(`おかしなキーがある: ${key}`)
+    }
+    const file = join(content, ...rel.split('/'))
+    const exists = existsSync(file)
+    if (exists && md5(readFileSync(file)) === etag) {
+      unchanged++
+      continue
+    }
+    plan.push({ key, etag, file, how: exists ? 'update' : 'new   ' })
+  }
+
+  if (dryRun) {
+    for (const p of plan) log(`${p.how}  ${p.key}`)
+    log(`dry-run: ${plan.length} files ← ${r2.bucket}（変わっていない ${unchanged}）`)
+    return { changed: plan.length, unchanged }
+  }
+
+  for (const p of plan) {
+    const buf = await getObject(r2, p.key)
+    // 落としたものが一覧の etag と違えば、途中で変わったか壊れたか。手元を汚さずに止める
+    if (md5(buf) !== p.etag) throw new Error(`${p.key}: 中身の MD5 が一覧の etag と合わない`)
+    mkdirSync(dirname(p.file), { recursive: true })
+    writeFileSync(p.file, buf)
+    log(`${p.how}  ${p.key}`)
+  }
+  log(`pull: ${plan.length} files ← ${r2.bucket}（変わっていない ${unchanged}）`)
+  return { changed: plan.length, unchanged }
+}
+
 // 単独で動かしたとき
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dryRun = process.argv.includes('--dry-run')
+  const doPull = process.argv.includes('--pull')
   try {
     const r2 = backupConfig()
     if (!r2) {
       console.error('backup: HIBI_R2_BACKUP_BUCKET がない')
       process.exit(1)
     }
-    await backup(r2, { content: resolve(root, process.env.HIBI_CONTENT || 'content'), dryRun })
+    const content = resolve(root, process.env.HIBI_CONTENT || 'content')
+    await (doPull ? pull : backup)(r2, { content, dryRun })
   } catch (e) {
     console.error(`backup: ${e.message}`)
     process.exit(1)
