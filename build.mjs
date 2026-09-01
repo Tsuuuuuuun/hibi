@@ -89,7 +89,13 @@ function parseSegment(file, time) {
     if (!block.length) return;
     // 画像だけのブロックは一行につき一つの図になるので、配列で返ってくる
     const parsed = parseBlock(block);
-    if (parsed) seg.blocks.push(...(Array.isArray(parsed) ? parsed : [parsed]));
+    if (parsed?.type === 'map') {
+      // 場所は本文の流れには置かず、時刻ブロックの属性にする。一つの時刻に一つだけ
+      if (seg.place) throw new Error(`@map は一つの時刻に一つだけ（${file} に二つ以上ある）`);
+      seg.place = { name: parsed.name, href: parsed.href };
+    } else if (parsed) {
+      seg.blocks.push(...(Array.isArray(parsed) ? parsed : [parsed]));
+    }
     block = [];
   };
   for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
@@ -128,6 +134,12 @@ function parseBlock(lines) {
     // 曲（?i= 付き）は小さいプレイヤー、アルバム・プレイリストは背の高いプレイヤー
     const isTrack = /[?&]i=\d/.test(url);
     return { type: 'am', url, cap: parts[1] || '', tall: parts.includes('tall') || !isTrack };
+  }
+  if (first.startsWith('@map ')) {
+    // 場所の名前と、地図へのリンク。リンクは省いてもよい（名前だけの札になる）
+    const [name, href] = first.slice(5).split('|').map(s => s.trim());
+    if (!name) throw new Error(`@map には場所の名前を書く（"${first}" が読めない）`);
+    return { type: 'map', name, href: href || '' };
   }
   if (/^@(?:x|twitter)\s/i.test(first)) {
     const parts = first.replace(/^@(?:x|twitter)\s+/i, '').split('|').map(s => s.trim());
@@ -208,6 +220,7 @@ function entryText(entry) {
   const out = [];
   const push = s => { if (s) out.push(String(s).replace(INLINE_LINK, '$1')); };
   for (const seg of entry.segs) {
+    push(seg.place?.name);
     for (const b of seg.blocks) {
       switch (b.type) {
         case 'p': push(b.text); break;
@@ -515,8 +528,22 @@ function renderFigure(im, iso) {
 
 // id は日付の下の時刻の並び（.times）から飛ぶ先。ファイル名と同じ HH-MM。
 // 月ページは一枚に複数の日が載り、同じ時刻が別の日と衝突するので id を置かない。
+// 見出し行は時刻と罫線、その右端に場所（@map）。場所は地図を埋め込まず名前だけの札にして、
+// リンクがあれば地図へ飛ぶ。
+function renderPlace(place) {
+  const pin = `<svg class="place-pin" viewBox="0 0 16 16" aria-hidden="true">` +
+    `<path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.3-4.5 8.5-4.5 8.5S3.5 9.3 3.5 6A4.5 4.5 0 0 1 8 1.5Z"/>` +
+    `<circle cx="8" cy="6" r="1.6"/></svg>`;
+  const body = `${pin}<span class="place-name">${esc(place.name)}</span>`;
+  return place.href
+    ? `<a class="place" href="${esc(place.href)}" target="_blank" rel="noopener">${body}</a>`
+    : `<span class="place">${body}</span>`;
+}
+
 function renderSeg(seg, iso, { anchor }) {
-  const parts = [`<time datetime="${iso}T${seg.time}">${seg.time}</time>`];
+  const parts = [`<div class="seghead"><time datetime="${iso}T${seg.time}">${seg.time}</time>${
+    seg.place ? renderPlace(seg.place) : ''
+  }</div>`];
   for (const b of seg.blocks) {
     parts.push(b.type === 'img' ? renderFigure(b, iso) : renderBlock(b, iso));
   }
