@@ -1,0 +1,148 @@
+/* 日ページに載せるエディタの見た目。scripts/edit.js と対で、確認サーバが手元にだけ差し込む。
+   検索（dialog.search）と日付ジャンプ（dialog.jump）に覆いの作法を揃えてある。 */
+
+/* 右下に浮かぶ投稿ボタン。ページ遷移で交差フェードに巻き込まれないよう名前を付けて留める */
+.edit-fab {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  font: 300 26px/1 var(--sans-frame);
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(23, 24, 26, .22);
+  view-transition-name: edit-fab;
+  z-index: 10;
+}
+.edit-fab:hover { opacity: .85; }
+.edit-fab:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+
+dialog.edit {
+  width: min(560px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 24vh);
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 18px 50px rgba(23, 24, 26, .14);
+  overflow: hidden;
+  view-transition-name: edit-sheet;
+}
+dialog.edit::backdrop { background: rgba(23, 24, 26, .18); }
+html:has(dialog.edit[open]) { overflow: hidden; }
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  max-height: inherit;
+}
+
+.edit-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px 0;
+}
+.edit-time {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--sub);
+  letter-spacing: .02em;
+}
+.edit-note {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans-frame);
+  font-size: 12px;
+  color: var(--faint);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-note.is-ng { color: #B23A3A; white-space: normal; }
+
+.edit-text {
+  display: block;
+  width: 100%;
+  min-height: 40vh;
+  margin: 8px 0 0;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--sans-body);
+  font-size: 16px; /* iOS は 16px 未満だと焦点で拡大する */
+  line-height: 1.8;
+  outline: none;
+}
+.edit-text::placeholder { color: var(--faint); }
+
+.edit-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--hair);
+}
+.edit-foot button {
+  padding: 8px 16px;
+  border: 1px solid var(--hair-dark);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.2 var(--sans-frame);
+  cursor: pointer;
+}
+.edit-foot button:hover { border-color: var(--ink); }
+.edit-foot button:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+.edit-foot .edit-submit { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.edit-foot .edit-submit:hover { opacity: .85; }
+.edit-foot .edit-submit:disabled { opacity: .5; cursor: default; }
+
+/* 一段組（681px 未満）では下から上がるシートにする。境は style.css と同じ */
+@media (max-width: 680px) {
+  dialog.edit {
+    width: 100vw;
+    max-height: calc(100vh - 12vh);
+    margin: auto 0 0;
+    border: 0;
+    border-radius: 14px 14px 0 0;
+  }
+  .edit-text { min-height: 34vh; }
+}
+
+/* 各時刻ブロックの見出し行（.prose time は flex で、::after が罫線）。罫線の右に置くので order で後ろへ回す */
+.edit-open {
+  order: 1;
+  margin: -6px -8px;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.edit-open:hover { color: var(--ink); }
+.edit-open:focus-visible { outline: 2px solid var(--navy); outline-offset: 0; }
+
+/* 下段の左側に「閉じる」と「削除」。削除は編集のときだけ出て、一度目で身構える */
+.edit-left { display: flex; gap: 8px; }
+.edit-foot .edit-delete { color: #B23A3A; border-color: transparent; }
+.edit-foot .edit-delete:hover { border-color: #B23A3A; }
+.edit-foot .edit-delete.is-armed { background: #B23A3A; color: var(--bg); border-color: #B23A3A; }
+.edit-note.is-warn { color: #B23A3A; white-space: normal; }

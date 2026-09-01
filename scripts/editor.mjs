@@ -153,8 +153,27 @@ function readBody(req, limit) {
 }
 
 // 確認サーバは全インターフェースで待つ（同じ Wi-Fi のスマホから見るため）。
-// 書ける口はこの手元からだけに限る。
-const local = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)
+// 書ける口はこの手元からだけに限る。build.mjs が日ページにエディタを注入するかどうかも同じ判定で決める。
+export const local = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)
+
+// 日ページに載せるエディタ。確認サーバが .html を返すときに </body> の直前へ差す。
+// assets/ に置くと site/ に写って公開されてしまうので、scripts/ に置いて /_write/ から返す。
+export const INJECT = '<link rel="stylesheet" href="/_write/edit.css">\n<script src="/_write/edit.js" defer></script>\n'
+const INJECT_FILES = { 'edit.js': ['edit.js', 'text/javascript; charset=utf-8'], 'edit.css': ['edit.css', 'text/css; charset=utf-8'] }
+
+// npm run new と同じ意味論。無ければ作る、空なら書く、あれば空行を挟んで後ろに足す。
+// （scripts/new.mjs はコマンドラインの入口として書かれていて関数を出していないので、ここに写している）
+function appendEntry(file, body) {
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  if (!fs.existsSync(file)) {
+    fs.writeFileSync(file, body ? body + '\n' : '')
+    return 'created'
+  }
+  const current = fs.readFileSync(file, 'utf8')
+  if (current.trim() === '') fs.writeFileSync(file, body + '\n')
+  else fs.appendFileSync(file, (current.endsWith('\n') ? '' : '\n') + '\n' + body + '\n')
+  return 'appended'
+}
 
 // build.mjs の確認サーバから呼ぶ。/_write を受け持ったら true を返す。
 export function editorHandler(ctx) {
@@ -182,6 +201,13 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
   // 画面そのもの。読むたびにファイルから読むので、いじったら再読み込みで反映される。
   if (endpoint === '') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(fs.readFileSync(PAGE))
+    return
+  }
+
+  // 日ページに注入するエディタ。読むたびにファイルから読むので、いじったら再読み込みで反映される。
+  if (INJECT_FILES[endpoint] && req.method === 'GET') {
+    const [name, type] = INJECT_FILES[endpoint]
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' }).end(fs.readFileSync(path.join(HERE, name)))
     return
   }
 
@@ -239,6 +265,25 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
     console.log(`saved: ${path.relative(content, file)}`)
     if (swept.length) console.log(`swept: ${date} ${IMG}/ から ${swept.join(', ')}`)
     json(res, 200, { ok: true, at: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}` })
+    return
+  }
+
+  // 投稿。日付と時刻は受け取らず、サーバの時計で決める（スマホの時計のずれで別のパスに書かないため）。
+  // 同じ分のファイルがあれば空行を挟んで後ろに足す。置き換えるのは POST entry のほう。
+  if (endpoint === 'post' && req.method === 'POST') {
+    const { text } = JSON.parse(String(await readBody(req, 4 * 1024 * 1024)) || '{}')
+    const body = String(text ?? '').trim()
+    if (!body) return json(res, 400, { error: '本文が空' })
+    const d = new Date()
+    const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+    const file = entryFile(content, date, time)
+    const how = appendEntry(file, body)
+    const swept = sweepImages(content, date)
+    await rebuild()
+    console.log(`${how}: ${path.relative(content, file)}`)
+    if (swept.length) console.log(`swept: ${date} ${IMG}/ から ${swept.join(', ')}`)
+    json(res, 200, { date, time, url: `/${date.replaceAll('-', '/')}/` })
     return
   }
 

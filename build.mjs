@@ -828,13 +828,20 @@ if (process.argv.includes('--watch')) {
 
   // 書く画面（/_write）。確認サーバのときだけ積む。
   // 同期（deploy）は content/ → site/ を見ているときだけ。npm run ref の一時ディレクトリでは出さない。
-  const { editorHandler } = await import('./scripts/editor.mjs');
+  const { editorHandler, local, INJECT } = await import('./scripts/editor.mjs');
+  const canDeploy = !process.env.HIBI_CONTENT && !process.env.HIBI_OUT;
   const editor = editorHandler({
     content: CONTENT,
     rebuild,
     root: ROOT,
-    canDeploy: !process.env.HIBI_CONTENT && !process.env.HIBI_OUT,
+    canDeploy,
   });
+  // 日ページに載せるエディタは site/ には書かず、返すときに差す（エディタ入りの site/ を上げる事故を防ぐ）。
+  // 出す条件は同期ボタンと同じ：content/ → site/ を見ていて、手元（loopback）からの読み込みのとき。
+  const inject = (req, file, html) =>
+    canDeploy && local(req) && path.extname(file) === '.html'
+      ? Buffer.from(String(html).replace(/<\/body>/i, INJECT + '</body>'))
+      : html;
 
   const MIME = {
     '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript',
@@ -856,7 +863,7 @@ if (process.argv.includes('--watch')) {
       return;
     }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' })
-      .end(fs.readFileSync(file));
+      .end(inject(req, file, fs.readFileSync(file)));
   }).listen(port, () => {
     console.log(`watching ${rel(CONTENT)}/ assets/ site.config.json — http://localhost:${port}`);
     console.log(`書く画面: http://localhost:${port}/_write`);
