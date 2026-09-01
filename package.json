@@ -7,6 +7,7 @@
     "dev": "node build.mjs --watch",
     "new": "node scripts/new.mjs",
     "ref": "node scripts/ref.mjs",
-    "deploy": "node build.mjs && node scripts/deploy.mjs"
+    "deploy": "node build.mjs && node scripts/deploy.mjs",
+    "backup": "node scripts/backup.mjs"
   }
 }

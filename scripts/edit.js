@@ -329,13 +329,6 @@
     t.focus()
   }
 
-  // 置き先の日。編集なら対象の日、新規なら選んだ日（選んでいなければ今日。実際の書き込み先はサーバが決めるので、
-  // 日付をまたぐ瞬間に入れた写真だけ本文と別の日に置かれうる。稀なので初版では扱わない）。
-  const photoDate = () => {
-    if (target) return hereDay
-    return dayTouched && /^\d{4}-\d\d-\d\d$/.test(el.day.value) ? el.day.value : today()
-  }
-
   const imagesOf = (list) => [...list].filter((f) => f && /^image\/(jpeg|png)$/.test(f.type))
 
   async function upload(files) {
@@ -344,8 +337,8 @@
     try {
       for (const [i, file] of files.entries()) {
         note(files.length > 1 ? `写真を置いている…（${i + 1}/${files.length}）` : '写真を置いている…')
-        // ファイル名はサーバが時刻で振るので、送るのは中身だけ
-        const res = await api(`image?date=${photoDate()}`, {
+        // 名前はサーバが貼った日時で振り、置き先は R2 で記事の日には依らないので、送るのは中身だけ
+        const res = await api('image', {
           method: 'POST',
           headers: { 'Content-Type': file.type },
           body: await file.arrayBuffer(),

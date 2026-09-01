@@ -627,14 +627,14 @@ function insertBlock(s) {
 async function upload(file) {
   flash(`${file.name || '写真'} を置いている…`)
   try {
-    // ファイル名はサーバがランダムに振る（連番にしない）ので、送るのは中身だけ
-    const res = await api(`image?date=${el.date.value}`, {
+    // 名前はサーバが貼った日時で振り、置き先は R2 なので、送るのは中身だけ
+    const res = await api('image', {
       method: 'POST',
       headers: { 'Content-Type': file.type },
       body: await file.arrayBuffer(),
     })
     insertBlock(`![](${res.ref})`)
-    flash(`${res.ref} を ${el.date.value} に置いた`)
+    flash(`${res.name} を置いた`)
   } catch (e) {
     flash(e.message, 'bad')
   }

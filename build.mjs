@@ -300,6 +300,18 @@ async function fetchOgp(url) {
 /* ---------------- 外部画像の寸法取得 ---------------- */
 
 const IMG_CACHE_FILE = path.join(ROOT, '.cache', 'imagesize.json');
+const readImageCache = () => fs.existsSync(IMG_CACHE_FILE) ? JSON.parse(fs.readFileSync(IMG_CACHE_FILE, 'utf8')) : {};
+function writeImageCache(cache) {
+  fs.mkdirSync(path.dirname(IMG_CACHE_FILE), { recursive: true });
+  fs.writeFileSync(IMG_CACHE_FILE, JSON.stringify(cache, null, 2) + '\n');
+}
+
+// 書く画面が R2 に置いた写真の寸法を先に覚えておく。次のビルドで resolveRemoteImages が取りに行かないで済む。
+function rememberImageSize(url, size) {
+  const cache = readImageCache();
+  cache[url] = size;
+  writeImageCache(cache);
+}
 
 // 外部 URL の画像はファイルから測れないので、ビルド時に落として測り、キャッシュする。
 // 取れなかったものは寸法なしで出す（レイアウトは揺れるが、ビルドは止めない）。
@@ -307,7 +319,7 @@ async function resolveRemoteImages(entries) {
   const imgs = entries.flatMap(e => e.segs).flatMap(s => s.blocks)
     .filter(b => b.type === 'img' && isRemote(b.src));
   if (!imgs.length) return;
-  const cache = fs.existsSync(IMG_CACHE_FILE) ? JSON.parse(fs.readFileSync(IMG_CACHE_FILE, 'utf8')) : {};
+  const cache = readImageCache();
 
   const need = [...new Set(imgs.filter(b => !(b.src in cache)).map(b => b.src))];
   let fetched = 0;
@@ -325,10 +337,7 @@ async function resolveRemoteImages(entries) {
       console.warn(`画像: 寸法を取れない ${url}（${e.message}）`);
     }
   }));
-  if (fetched) {
-    fs.mkdirSync(path.dirname(IMG_CACHE_FILE), { recursive: true });
-    fs.writeFileSync(IMG_CACHE_FILE, JSON.stringify(cache, null, 2) + '\n');
-  }
+  if (fetched) writeImageCache(cache);
 
   for (const b of imgs) b.size = cache[b.src] ?? null;
 }
@@ -835,6 +844,9 @@ if (process.argv.includes('--watch')) {
     rebuild,
     root: ROOT,
     canDeploy,
+    // 写真を R2 に置くときに寸法を測って覚える（build.mjs の寸法読みとキャッシュを共有する）
+    measureImage: imageSizeOf,
+    rememberImageSize,
   });
   // 日ページに載せるエディタは site/ には書かず、返すときに差す（エディタ入りの site/ を上げる事故を防ぐ）。
   // 出す条件は同期ボタンと同じ：content/ → site/ を見ていて、手元（loopback）からの読み込みのとき。

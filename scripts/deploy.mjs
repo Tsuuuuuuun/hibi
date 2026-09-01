@@ -8,6 +8,8 @@
 //   node scripts/deploy.mjs --dry-run          → 送るマニフェストを出して終わる（通信しない）
 //   node scripts/deploy.mjs --force            → 同名の別の Worker があっても上書きする
 //
+// 最後に content/ の写しを R2 に取る（scripts/backup.mjs）。HIBI_R2_BACKUP_BUCKET が無ければ飛ばす。
+//
 // API トークンは「Workers スクリプト:編集」の権限のものを使う。
 // アカウント ID は Cloudflare ダッシュボードの Workers & Pages の右側に出ている。
 // 二つはリポジトリ直下の .env に置いてもよい（gitignore 済み）。環境変数のほうが優先される。
@@ -20,8 +22,9 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { join, dirname, extname, relative, sep } from 'node:path'
+import { join, resolve, dirname, extname, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { backup, backupConfig } from './backup.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, process.env.HIBI_OUT || 'site')
@@ -235,3 +238,15 @@ if (workersDev) {
 }
 
 console.log(`deployed: ${files.length} files → ${name}`)
+
+/* ---------------- 4. content/ の写し ---------------- */
+
+// 写真は R2 にあり、site/ は content/ から作れるので、写しがいるのは content/ だけ。
+// ここで失敗しても公開は済んでいる。ただし写しが取れていないことは知らせたいので、終了コードは落とす。
+try {
+  const r2 = backupConfig()
+  if (r2) await backup(r2, { content: resolve(root, process.env.HIBI_CONTENT || 'content') })
+  else console.log('backup: HIBI_R2_BACKUP_BUCKET がないので content/ の写しは取らない')
+} catch (e) {
+  die(`content/ の写しに失敗（公開は済んでいる）\n  ${e.message}`)
+}

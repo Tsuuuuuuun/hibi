@@ -4,6 +4,11 @@
 //   http://localhost:8888/_write
 //
 // 保存すると再ビルドの完了を待ってから返すので、返ったときにはもう日ページが新しい。
+//
+// 写真は content/ には置かず、Cloudflare R2 に上げて本文には公開 URL を書く（Static Assets のファイル数の上限を写真で食わないため）。
+// バケットの中では img/YYYY-MM-DD-HH-MM-SS.jpg と平たく並べる。日時は貼ったときのサーバの時計で、記事の日とは無関係。
+// 設定は .env の HIBI_R2_BUCKET・HIBI_R2_URL（公開 URL の先頭）と CLOUDFLARE_ACCOUNT_ID・CLOUDFLARE_API_TOKEN。
+// トークンは「Workers R2 Storage:編集」が要る。deploy 用と分けたいときは HIBI_R2_TOKEN が優先される。
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -19,8 +24,9 @@ const TIME_RE = /^(\d{2}):(\d{2})$/
 // 日記に置ける画像は build.mjs が寸法を読める JPEG/PNG だけ
 const IMAGE_EXT = { 'image/jpeg': '.jpg', 'image/png': '.png' }
 const MAX_IMAGE = 20 * 1024 * 1024
-// 写真は記事の md と混ぜず、日ディレクトリの下の img/ に置く
+// バケットの中で写真を置く場所。あとで別のものを同じバケットに置いても混ざらないように
 const IMG = 'img'
+const API = 'https://api.cloudflare.com/client/v4'
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -76,44 +82,62 @@ function listEntries(root) {
   return days.sort((a, b) => b.date.localeCompare(a.date))
 }
 
-// 名前は貼った時刻にする。日付はディレクトリが持っているので、本文の HH-MM.md と同じ考え方。
-function stampName(dir, ext) {
+// 名前は貼った日時（サーバの時計）。記事の日とは無関係な、ただのタイムスタンプ。
+// 記事の日を含めないので、本文の日付を後から動かしても写真は迷子にならない。
+let lastStamp = ''
+function stampName(ext) {
   const d = new Date()
-  const stamp = `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
-  if (!fs.existsSync(path.join(dir, stamp + ext))) return stamp + ext
-  // 同じ秒に二枚入ったときだけ、後ろに短いランダムを足す（連番にはしない）
-  for (;;) {
-    const id = Array.from({ length: 3 }, () => randomInt(36).toString(36)).join('')
-    if (!fs.existsSync(path.join(dir, `${stamp}-${id}${ext}`))) return `${stamp}-${id}${ext}`
-  }
+  const stamp = [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate()), pad(d.getHours()), pad(d.getMinutes()), pad(d.getSeconds())].join('-')
+  // 同じ秒に二枚入ったときだけ、後ろに短いランダムを足す（連番にはしない）。
+  // R2 には existsSync のように聞けないので、このプロセスが直前に振った名前と比べる。書く人は一人なのでこれで足りる。
+  const dup = stamp === lastStamp
+  lastStamp = stamp
+  if (!dup) return stamp + ext
+  const id = Array.from({ length: 3 }, () => randomInt(36).toString(36)).join('')
+  return `${stamp}-${id}${ext}`
 }
 
-// その日のすべての md が参照している写真の名前。img/ を付けて書いても付けなくても拾う。
-function referenced(dir) {
-  const names = new Set()
-  for (const f of fs.readdirSync(dir)) {
-    if (!/^\d{2}-\d{2}\.md$/.test(f)) continue
-    const text = fs.readFileSync(path.join(dir, f), 'utf8')
-    for (const m of text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) names.add(path.basename(m[1].trim()))
+// R2 の設定。.env はここで読む（deploy.mjs と同じく、すでに環境変数にあるものが勝つ）。
+// HIBI_R2_BUCKET が無ければ写真は置けない（本文だけは書ける）。
+function r2Config(root) {
+  const envFile = path.join(root, '.env')
+  if (fs.existsSync(envFile)) process.loadEnvFile(envFile)
+  const bucket = process.env.HIBI_R2_BUCKET
+  if (!bucket) return null
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID
+  const token = process.env.HIBI_R2_TOKEN || process.env.CLOUDFLARE_API_TOKEN
+  const url = (process.env.HIBI_R2_URL || '').replace(/\/+$/, '')
+  const missing = [!accountId && 'CLOUDFLARE_ACCOUNT_ID', !token && 'CLOUDFLARE_API_TOKEN', !url && 'HIBI_R2_URL'].filter(Boolean)
+  if (missing.length) {
+    console.error(`editor: HIBI_R2_BUCKET があるのに ${missing.join('・')} がない`)
+    process.exit(1)
   }
-  return names
+  return { bucket, accountId, token, url }
 }
 
-// どの本文からも参照されなくなった写真を img/ から消す。保存・削除のたびに通る。
-// 日ディレクトリに手で置いた写真には触らない（消していいのは img/ の中だけ）。
-function sweepImages(root, date) {
-  const dir = dayDir(root, date)
-  const imgDir = path.join(dir, IMG)
-  if (!fs.existsSync(imgDir)) return []
-  const keep = referenced(dir)
-  const gone = []
-  for (const f of fs.readdirSync(imgDir)) {
-    if (!/\.(jpe?g|png)$/i.test(f) || keep.has(f)) continue
-    fs.rmSync(path.join(imgDir, f))
-    gone.push(f)
+// R2 に一つ置く。キーの / はそのまま送る（エンコードすると別のキーになる）。
+// 名前は二度と同じにならないので、ブラウザには長く持ってもらってよい。
+async function putR2(r2, key, type, body) {
+  const res = await fetch(`${API}/accounts/${r2.accountId}/r2/buckets/${r2.bucket}/objects/${key}`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${r2.token}`,
+      'content-type': type,
+      'cache-control': 'public, max-age=31536000, immutable',
+    },
+    body,
+  })
+  const text = await res.text()
+  let j
+  try {
+    j = JSON.parse(text)
+  } catch {
+    throw new Error(`R2 が JSON を返さなかった（${res.status}）${text.slice(0, 200)}`)
   }
-  if (!fs.readdirSync(imgDir).length) fs.rmdirSync(imgDir)
-  return gone
+  if (!res.ok || j.success === false) {
+    const errs = (j.errors || []).map((e) => `${e.code}: ${e.message}`).join(', ') || text.slice(0, 200)
+    throw new Error(`R2 に置けなかった（${res.status}）${errs}`)
+  }
 }
 
 // 同期（npm run deploy と同じこと）。ビルドは確認サーバのものを使い、
@@ -177,6 +201,10 @@ function appendEntry(file, body) {
 
 // build.mjs の確認サーバから呼ぶ。/_write を受け持ったら true を返す。
 export function editorHandler(ctx) {
+  // 起動時に一度だけ読む。設定が足りないときはここで止まる（写真を貼ってから気付くより早い）
+  const r2 = r2Config(ctx.root)
+  if (r2) console.log(`images: R2 ${r2.bucket} → ${r2.url}/${IMG}/`)
+  else console.log('images: HIBI_R2_BUCKET がないので写真は置けない')
   return async function handle(req, res, url) {
     if (url !== '/_write' && !url.startsWith('/_write/')) return false
     if (!local(req)) {
@@ -184,7 +212,7 @@ export function editorHandler(ctx) {
       return true
     }
     try {
-      await route(req, res, url, ctx)
+      await route(req, res, url, { ...ctx, r2 })
     } catch (e) {
       // 同期の出力を流し始めたあとは、もうヘッダを書けない
       if (res.headersSent) res.end(`\ndeploy: ${e.message}\n--- ng\n`)
@@ -194,7 +222,7 @@ export function editorHandler(ctx) {
   }
 }
 
-async function route(req, res, url, { content, rebuild, root, canDeploy }) {
+async function route(req, res, url, { content, rebuild, root, canDeploy, r2, measureImage, rememberImageSize }) {
   const query = new URL(req.url, 'http://localhost').searchParams
   const endpoint = url.replace(/^\/_write\/?/, '')
 
@@ -259,11 +287,9 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
     const body = String(text ?? '').replace(/\s+$/, '')
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, body ? body + '\n' : '')
-    const swept = sweepImages(content, date)
     await rebuild()
     const now = new Date()
     console.log(`saved: ${path.relative(content, file)}`)
-    if (swept.length) console.log(`swept: ${date} ${IMG}/ から ${swept.join(', ')}`)
     json(res, 200, { ok: true, at: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}` })
     return
   }
@@ -282,10 +308,8 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
     if (bad) return json(res, 400, { error: bad })
     const file = entryFile(content, date, time)
     const how = appendEntry(file, body)
-    const swept = sweepImages(content, date)
     await rebuild()
     console.log(`${how}: ${path.relative(content, file)}`)
-    if (swept.length) console.log(`swept: ${date} ${IMG}/ から ${swept.join(', ')}`)
     json(res, 200, { date, time, url: `/${date.replaceAll('-', '/')}/` })
     return
   }
@@ -297,7 +321,6 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
     const file = entryFile(content, date, time)
     if (!fs.existsSync(file)) return json(res, 404, { error: 'そのファイルはない' })
     fs.rmSync(file)
-    const swept = sweepImages(content, date)
     // 空になった日・月・年のディレクトリは残さない
     for (let dir = path.dirname(file); dir.startsWith(content + path.sep); dir = path.dirname(dir)) {
       if (fs.readdirSync(dir).length) break
@@ -305,24 +328,32 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
     }
     await rebuild()
     console.log(`deleted: ${date} ${time}`)
-    if (swept.length) console.log(`swept: ${date} ${IMG}/ から ${swept.join(', ')}`)
     json(res, 200, { ok: true })
     return
   }
 
+  // 写真。R2 に置いて公開 URL を返す。本文に入るのはその URL で、build.mjs は外部画像として扱う。
+  // 記事の日は要らない（名前は貼った日時）。再ビルドも要らない（site/ には何も増えない）。
   if (endpoint === 'image' && req.method === 'POST') {
-    const date = query.get('date')
-    const bad = badTarget(date, '00:00')
-    if (bad) return json(res, 400, { error: bad })
-    const ext = IMAGE_EXT[String(req.headers['content-type']).split(';')[0]]
+    if (!r2) return json(res, 400, { error: '写真の置き場がない（.env に HIBI_R2_BUCKET と HIBI_R2_URL を書く）' })
+    const type = String(req.headers['content-type']).split(';')[0]
+    const ext = IMAGE_EXT[type]
     if (!ext) return json(res, 400, { error: '写真は JPEG か PNG だけ' })
-    const dir = path.join(dayDir(content, date), IMG)
-    fs.mkdirSync(dir, { recursive: true })
-    const name = stampName(dir, ext)
-    fs.writeFileSync(path.join(dir, name), await readBody(req, MAX_IMAGE))
-    await rebuild()
-    console.log(`added: ${date} ${IMG}/${name}`)
-    json(res, 200, { name, ref: `${IMG}/${name}` })
+    const buf = await readBody(req, MAX_IMAGE)
+    // 寸法はここで測る。読めないものは置く前に断る（ビルドが R2 まで取りに行って警告を出すより早い）
+    let size
+    try {
+      size = measureImage(buf, type)
+    } catch (e) {
+      return json(res, 400, { error: e.message })
+    }
+    const key = `${IMG}/${stampName(ext)}`
+    const url = `${r2.url}/${key}`
+    await putR2(r2, key, type, buf)
+    // build.mjs の寸法キャッシュに先に入れておくと、ビルドが R2 に取りに行かないで済む
+    rememberImageSize(url, size)
+    console.log(`added: ${url}`)
+    json(res, 200, { name: path.basename(key), ref: url })
     return
   }
 
