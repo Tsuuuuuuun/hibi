@@ -268,15 +268,18 @@ async function route(req, res, url, { content, rebuild, root, canDeploy }) {
     return
   }
 
-  // 投稿。日付と時刻は受け取らず、サーバの時計で決める（スマホの時計のずれで別のパスに書かないため）。
+  // 投稿。日付と時刻は省くとサーバの時計（スマホの時計のずれで別のパスに書かないため）、
+  // 手で選んだときはそれ（YYYY-MM-DD と HH:MM、別々に省ける）。
   // 同じ分のファイルがあれば空行を挟んで後ろに足す。置き換えるのは POST entry のほう。
   if (endpoint === 'post' && req.method === 'POST') {
-    const { text } = JSON.parse(String(await readBody(req, 4 * 1024 * 1024)) || '{}')
+    const { text, date: chosenDate, time: chosenTime } = JSON.parse(String(await readBody(req, 4 * 1024 * 1024)) || '{}')
     const body = String(text ?? '').trim()
     if (!body) return json(res, 400, { error: '本文が空' })
     const d = new Date()
-    const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+    const date = chosenDate ? String(chosenDate) : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const time = chosenTime ? String(chosenTime) : `${pad(d.getHours())}:${pad(d.getMinutes())}`
+    const bad = badTarget(date, time)
+    if (bad) return json(res, 400, { error: bad })
     const file = entryFile(content, date, time)
     const how = appendEntry(file, body)
     const swept = sweepImages(content, date)

@@ -135,7 +135,11 @@
   dlg.className = 'edit'
   dlg.innerHTML =
     '<form method="dialog" class="edit-form">' +
-    '<div class="edit-head"><span class="edit-time"></span><span class="edit-note" aria-live="polite"></span></div>' +
+    // 新規では見出しの日付と時刻を選べる（触らなければサーバの時計で決まる）。編集では対象の時刻を出すだけ
+    '<div class="edit-head"><span class="edit-time"></span>' +
+    '<input type="date" class="edit-day" aria-label="投稿する日付" hidden>' +
+    '<input type="time" class="edit-when" aria-label="投稿する時刻" hidden>' +
+    '<span class="edit-note" aria-live="polite"></span></div>' +
     '<textarea class="edit-text" rows="6" placeholder="いま思ったこと" autocapitalize="off"></textarea>' +
     '<div class="edit-foot">' +
     '<span class="edit-left"><button type="button" class="edit-close">閉じる</button>' +
@@ -150,6 +154,8 @@
 
   const el = {
     time: dlg.querySelector('.edit-time'),
+    day: dlg.querySelector('.edit-day'),
+    when: dlg.querySelector('.edit-when'),
     note: dlg.querySelector('.edit-note'),
     text: dlg.querySelector('.edit-text'),
     close: dlg.querySelector('.edit-close'),
@@ -178,6 +184,25 @@
   let target = null   // 編集なら { id: '10-40', time: '10:40' }、新規なら null
   let busy = false
   let armed = false   // 削除の一度目を押したか
+  // 新規の日付・時刻を手で変えたか。変えていないほうは送らず、サーバの時計に任せる
+  let dayTouched = false
+  let whenTouched = false
+  let clockTimer = null
+
+  const today = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
+  // 触られていないあいだは、見出しの日付と時刻を今に合わせ続ける（開いたまま置いても古いままにならない）
+  const followClock = () => {
+    clearInterval(clockTimer)
+    clockTimer = setInterval(() => {
+      if (!dlg.open || target || (dayTouched && whenTouched)) return clearInterval(clockTimer)
+      if (!dayTouched) el.day.value = today()
+      if (!whenTouched) el.when.value = clock()
+    }, 15000)
+  }
 
   const note = (msg, kind) => {
     el.note.textContent = msg
@@ -200,7 +225,13 @@
     disarm()
     note('')
     el.text.value = ''
-    el.time.textContent = target ? target.time : clock()
+    el.time.textContent = target ? target.time : ''
+    el.time.hidden = !target
+    el.day.hidden = el.when.hidden = !!target
+    el.day.value = today()
+    el.when.value = clock()
+    dayTouched = whenTouched = false
+    if (!target) followClock()
     el.submit.textContent = target ? '保存' : '投稿'
     el.del.hidden = !target
     dlg.showModal()
@@ -237,9 +268,12 @@
         mark(`${target.time} を保存した`)
         reloadAt(target.id)
       } else {
-        const body = await api('post', jsonOpts('POST', { text }))
+        // 手で選んだものだけ送る。input が空（消した）なら選んでいないのと同じ扱い
+        const date = dayTouched && /^\d{4}-\d\d-\d\d$/.test(el.day.value) ? el.day.value : undefined
+        const time = whenTouched && /^\d\d:\d\d$/.test(el.when.value) ? el.when.value : undefined
+        const body = await api('post', jsonOpts('POST', { text, date, time }))
         const id = body.time.replace(':', '-')
-        mark(`${body.time} に投稿した`)
+        mark(`${body.date === hereDay ? '' : body.date + ' '}${body.time} に投稿した`)
         if (body.date === hereDay) reloadAt(id)
         else location.assign(body.url + '#' + id)
       }
@@ -295,12 +329,11 @@
     t.focus()
   }
 
-  // 置き先の日。編集なら対象の日、新規なら今日（実際の書き込み先はサーバが決めるが、
+  // 置き先の日。編集なら対象の日、新規なら選んだ日（選んでいなければ今日。実際の書き込み先はサーバが決めるので、
   // 日付をまたぐ瞬間に入れた写真だけ本文と別の日に置かれうる。稀なので初版では扱わない）。
   const photoDate = () => {
     if (target) return hereDay
-    const d = new Date()
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    return dayTouched && /^\d{4}-\d\d-\d\d$/.test(el.day.value) ? el.day.value : today()
   }
 
   const imagesOf = (list) => [...list].filter((f) => f && /^image\/(jpeg|png)$/.test(f.type))
@@ -368,6 +401,11 @@
     if (busy) e.preventDefault()
   })
   dlg.addEventListener('close', disarm)
+  dlg.addEventListener('close', () => clearInterval(clockTimer))
+  for (const type of ['input', 'change']) {
+    el.day.addEventListener(type, () => { dayTouched = true })
+    el.when.addEventListener(type, () => { whenTouched = true })
+  }
   dlg.addEventListener('keydown', (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return
     // ⌘Enter はどちらの状態でも実行。⌘S は保存のときだけ（新規で押してもブラウザの保存は出さない）
