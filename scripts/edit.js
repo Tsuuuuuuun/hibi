@@ -13,7 +13,6 @@
   const canon = document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')
   const here = new URL(canon || location.href, location.href).pathname
   const hereDay = here.match(/^\/(\d{4})\/(\d{2})\/(\d{2})\/$/)?.slice(1).join('-') || ''
-  if (!hereDay) return
 
   const pad = (n) => String(n).padStart(2, '0')
   const clock = () => {
@@ -34,6 +33,95 @@
     history.replaceState(null, '', location.pathname + (id ? '#' + id : ''))
     location.reload()
   }
+
+  /* ---------------- トーストと同期 ---------------- */
+
+  // 書いたあとは自動では公開せず、トーストの「同期」で一拍おく（書き損じがそのまま上がるのを避ける）。
+  // 投稿・保存・削除のあとはページを読み直すので、何をしたかを sessionStorage に残してから移り、
+  // 読み込み後に拾って出す。同期が通るか × で閉じるまで残るので、押し忘れても次に開いたときに気付ける。
+  // このタブの中だけの話なので localStorage ではなく sessionStorage。_write から同期したぶんは知らない。
+  const UNSYNCED = 'hibi:unsynced'
+  const session = {
+    get: () => { try { return sessionStorage.getItem(UNSYNCED) } catch { return null } },
+    set: (v) => { try { sessionStorage.setItem(UNSYNCED, v) } catch {} },
+    del: () => { try { sessionStorage.removeItem(UNSYNCED) } catch {} },
+  }
+  const mark = (msg) => session.set(msg)
+
+  const toast = document.createElement('div')
+  toast.className = 'edit-toast'
+  toast.setAttribute('role', 'status')
+  toast.hidden = true
+  toast.innerHTML =
+    '<span class="edit-toast-msg"></span>' +
+    '<button type="button" class="edit-sync">同期</button>' +
+    '<button type="button" class="edit-toast-close" aria-label="閉じる">×</button>'
+  document.body.append(toast)
+  const tm = toast.querySelector('.edit-toast-msg')
+  const syncBtn = toast.querySelector('.edit-sync')
+  let hideTimer = null
+
+  const showToast = (msg, kind) => {
+    clearTimeout(hideTimer)
+    tm.textContent = msg
+    toast.className = 'edit-toast' + (kind ? ' is-' + kind : '')
+    toast.hidden = false
+  }
+  const hideToast = () => {
+    clearTimeout(hideTimer)
+    toast.hidden = true
+  }
+
+  // POST /_write/deploy は出力を一行ずつ流し、最後の一行だけが結果（--- ok / --- ng）。_write と同じ読み方。
+  async function sync() {
+    if (syncBtn.disabled) return
+    syncBtn.disabled = true
+    syncBtn.textContent = '同期している…'
+    showToast('はじめている…')
+    let last = ''
+    let ok = false
+    try {
+      const res = await fetch('/_write/deploy', { method: 'POST' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `${res.status} ${res.statusText}`)
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let rest = ''
+      for (;;) {
+        const { value, done } = await reader.read()
+        if (done) break
+        rest += decoder.decode(value, { stream: true })
+        const parts = rest.split('\n')
+        rest = parts.pop()
+        for (const line of parts) {
+          if (line.startsWith('--- ')) { ok = line.trim() === '--- ok'; continue }
+          if (!line.trim()) continue
+          last = line
+          showToast(line)
+        }
+      }
+      if (!ok) throw new Error(last || '同期に失敗した')
+      session.del()
+      syncBtn.hidden = true
+      showToast(`同期した（${new Date().toTimeString().slice(0, 5)}）`, 'ok')
+      hideTimer = setTimeout(hideToast, 4000)
+    } catch (e) {
+      showToast(`同期に失敗した: ${e.message}`, 'ng')
+      syncBtn.disabled = false
+      syncBtn.textContent = 'もう一度'
+    }
+  }
+
+  syncBtn.addEventListener('click', sync)
+  toast.querySelector('.edit-toast-close').addEventListener('click', () => {
+    session.del()
+    hideToast()
+  })
+  // 読み直したあとに、直前にしたことを拾って出す
+  const pending = session.get()
+  if (pending) showToast(pending)
+
+  // ここから下は日ページだけ。トーストは月一覧（最後のブロックを消したあとに着く）にも出したいので、上に置いてある。
+  if (!hereDay) return
 
   /* ---------------- 差し込む要素 ---------------- */
 
@@ -146,10 +234,12 @@
     try {
       if (target) {
         await api('entry', jsonOpts('POST', { date: hereDay, time: target.time, text }))
+        mark(`${target.time} を保存した`)
         reloadAt(target.id)
       } else {
         const body = await api('post', jsonOpts('POST', { text }))
         const id = body.time.replace(':', '-')
+        mark(`${body.time} に投稿した`)
         if (body.date === hereDay) reloadAt(id)
         else location.assign(body.url + '#' + id)
       }
@@ -175,6 +265,7 @@
     note('削除している…')
     try {
       await api('entry', jsonOpts('DELETE', { date: hereDay, time: target.time }))
+      mark(`${target.time} を削除した`)
       // 消したあとの行き先。同じ日に他のブロックが残っていれば読み直す。
       // 残っていなければ日ページごと無くなるので、まだ記述のある月へ、それも無ければ / へ。
       if (segs.length > 1) {

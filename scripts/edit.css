@@ -149,3 +149,44 @@ html:has(dialog.edit[open]) { overflow: hidden; }
 
 /* 写真を落とすあいだは本文欄の地を変える（_write と同じ色） */
 dialog.edit.is-dropping .edit-text { background: #F3F6FA; }
+
+/* 書いたあとに出るトースト。左下に置き、右下の投稿ボタンと重ねない。同期が通るか × で閉じるまで残る */
+.edit-toast {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  max-width: min(480px, calc(100vw - 108px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 14px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--bg);
+  font: 13px/1.4 var(--sans-frame);
+  box-shadow: 0 8px 24px rgba(23, 24, 26, .22);
+  view-transition-name: edit-toast;
+  z-index: 10;
+}
+.edit-toast.is-ng { background: #B23A3A; }
+.edit-toast-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-toast.is-ng .edit-toast-msg { white-space: normal; }
+.edit-toast button {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid rgba(255, 255, 255, .55);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: 13px/1.2 var(--sans-frame);
+  cursor: pointer;
+}
+.edit-toast button:hover { border-color: currentColor; }
+.edit-toast button:disabled { opacity: .6; cursor: default; }
+.edit-toast .edit-toast-close { padding: 5px 8px; border-color: transparent; font-size: 16px; line-height: 1; }
