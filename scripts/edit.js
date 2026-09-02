@@ -383,6 +383,16 @@
   /* ---------------- 操作 ---------------- */
 
   fab.addEventListener('click', () => open(null))
+  // 「n」で新規を開く（Twitter と同じ）。作法は日付ジャンプの「d」（assets/jump.js）に揃える。
+  // この script 自体が日ページにしか走らないので、拾うのは「＋」が出ているページだけ。
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return
+    if (document.querySelector('dialog[open]')) return
+    const t = e.target
+    if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+    e.preventDefault()
+    open(null)
+  })
   el.close.addEventListener('click', () => dlg.close())
   el.submit.addEventListener('click', submit)
   el.del.addEventListener('click', remove)
