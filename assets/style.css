@@ -638,11 +638,13 @@ a.place:hover .place-name { text-decoration: underline; text-underline-offset: .
   background: var(--img-bg);
 }
 
+/* 写真の説明。10.5px は「前の日」「日付」のようなラベルの段だが、ここだけは
+   ラベルではなく読ませる文が入るので、寸法も色も一段上げる */
 figcaption {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 13px;
   letter-spacing: .06em;
-  color: var(--faint);
+  color: var(--sub);
   margin-top: .6em;
   text-align: center;
 }
