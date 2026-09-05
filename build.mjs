@@ -652,6 +652,10 @@ function pageShell({ title, description, canonical, og, body }) {
     canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
     `<meta property="og:site_name" content="${esc(config.title)}">`,
     ...(og || []),
+    // 自前の og:image を持たないページ（家・月・写真の無い日・404）には家の板を出す。
+    // 写真のある日はその写真が上で入っているので、ここは通らない。
+    (og || []).some(t => t.includes('og:image')) ? ''
+      : `<meta property="og:image" content="${esc(absUrl('/assets/og.png'))}">`,
     // 板そのものが墨なので、タブの明暗にかかわらず同じ絵でいい（明暗別の指定は要らない）。
     `<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">`,
     // iOS のホーム画面用。SVG を読まないので PNG が要る（scripts/icon.mjs で書き出す）。
@@ -709,7 +713,13 @@ function monthPageHtml(entries, monthKeys, key) {
   });
 }
 
-function dayPageHtml(entries, entry) {
+// home は / のとき。中身は最新の日ページの丸写しだが、共有されたときに「その日の記事」ではなく
+// 「日々というサイト」として出したいので、題と og だけ差し替える。og:image は持たせないので、
+// pageShell の既定（家の板）がそのまま入る（今日写真を貼ったかどうかで顔が変わらない）。
+//
+// canonical は日ページのまま動かさない。assets/jump.js と scripts/edit.js が
+// / の「今いる日」をここから読んでいて、向き先を変えると日付ジャンプと投稿が黙って壊れる。
+function dayPageHtml(entries, entry, { home = false } = {}) {
   const idx = entries.indexOf(entry);
   const monthKey = entry.iso.slice(0, 7);
   const url = config.baseUrl + dayPath(entry.iso);
@@ -722,10 +732,15 @@ function dayPageHtml(entries, entry) {
     `<main>${renderArticle(entry, { linkDate: false })}</main>\n` +
     `<nav class="pager pager--day" aria-label="日の移動">${nav(entries[idx - 1], 'left')}${nav(entries[idx + 1], 'right')}</nav>`;
   return pageShell({
-    title: `${disp(entry.iso)} | ${config.title}`,
+    title: home ? config.title : `${disp(entry.iso)} | ${config.title}`,
     description,
     canonical: url,
-    og: [
+    og: home ? [
+      `<meta property="og:type" content="website">`,
+      `<meta property="og:title" content="${esc(config.title)}">`,
+      `<meta property="og:description" content="${esc(description)}">`,
+      `<meta property="og:url" content="${esc(config.baseUrl + '/')}">`,
+    ] : [
       `<meta property="og:type" content="article">`,
       `<meta property="og:title" content="${disp(entry.iso)}">`,
       `<meta property="og:description" content="${esc(description)}">`,
@@ -808,7 +823,7 @@ async function build() {
     write(monthPath(key).slice(1) + 'index.html', monthPageHtml(entries, monthKeys, key));
   }
   // トップは最新の日ページと同じ内容。一覧は上の「一覧へ」から辿る。正規 URL は日ページに向ける。
-  write('index.html', dayPageHtml(entries, entries.at(-1)));
+  write('index.html', dayPageHtml(entries, entries.at(-1), { home: true }));
 
   for (const entry of entries) {
     write(dayPath(entry.iso).slice(1) + 'index.html', dayPageHtml(entries, entry));
