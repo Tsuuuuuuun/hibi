@@ -34,8 +34,8 @@
   --navy: #23406B;
   --img-bg: #E0E2DD;
   --bg: #FFFFFF;
-  --sans-frame: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic Medium', '游ゴシック Medium', 'YuGothic', '游ゴシック体', 'Meiryo', sans-serif;
-  --sans-body: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic Medium', '游ゴシック Medium', 'YuGothic', '游ゴシック体', 'Meiryo', sans-serif;
+  --sans-frame: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif;
+  --sans-body: 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', sans-serif;
   --serif: 'Shippori Mincho', serif;
   --mono: 'Roboto Mono', ui-monospace, monospace;
 
