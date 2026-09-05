@@ -128,15 +128,35 @@ html:has(dialog.edit[open]) { overflow: hidden; }
 
 /* 一段組（681px 未満）では下から上がるシートにする。境は style.css と同じ */
 @media (max-width: 680px) {
+  /* 下端と高さは edit.js が visualViewport から --vv-b / --vv-h に入れる。無いあいだは窓の下端いっぱい */
   dialog.edit {
+    position: fixed;
+    inset: auto 0 var(--vv-b, 0) 0;
     width: 100vw;
-    max-height: calc(100vh - 12vh);
-    margin: auto 0 0;
+    max-height: min(calc(100vh - 12vh), var(--vv-h, 100vh));
+    margin: 0;
     border: 0;
     border-radius: 14px 14px 0 0;
   }
   .edit-text { min-height: 34vh; }
+  /* キーボードが出ているあいだは可視領域いっぱいにして、本文欄が残りを埋める */
+  dialog.edit.is-keyboard { height: var(--vv-h); max-height: none; border-radius: 0; }
+  dialog.edit.is-keyboard .edit-form { height: 100%; max-height: none; }
+  dialog.edit.is-keyboard .edit-text { flex: 1 1 auto; min-height: 0; }
 }
+
+/* 編集を開いたとき、サーバの本文と食い違う書きかけがあれば見出し行に出す */
+.edit-draft {
+  padding: 4px 10px;
+  border: 1px solid var(--hair-dark);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 12px/1.2 var(--sans-frame);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.edit-draft:hover { border-color: var(--ink); }
 
 /* 各時刻ブロックの見出し行（.prose time は flex で、::after が罫線）。罫線の右に置くので order で後ろへ回す */
 .edit-open {

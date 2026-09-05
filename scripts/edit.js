@@ -139,7 +139,8 @@
     '<div class="edit-head"><span class="edit-time"></span>' +
     '<input type="date" class="edit-day" aria-label="投稿する日付" hidden>' +
     '<input type="time" class="edit-when" aria-label="投稿する時刻" hidden>' +
-    '<span class="edit-note" aria-live="polite"></span></div>' +
+    '<span class="edit-note" aria-live="polite"></span>' +
+    '<button type="button" class="edit-draft" hidden>下書きを使う</button></div>' +
     '<textarea class="edit-text" rows="6" placeholder="いま思ったこと" autocapitalize="off"></textarea>' +
     '<div class="edit-foot">' +
     '<span class="edit-left"><button type="button" class="edit-close">閉じる</button>' +
@@ -157,6 +158,7 @@
     day: dlg.querySelector('.edit-day'),
     when: dlg.querySelector('.edit-when'),
     note: dlg.querySelector('.edit-note'),
+    draft: dlg.querySelector('.edit-draft'),
     text: dlg.querySelector('.edit-text'),
     close: dlg.querySelector('.edit-close'),
     photo: dlg.querySelector('.edit-photo'),
@@ -220,10 +222,27 @@
     el.del.classList.remove('is-armed')
   }
 
+  /* ---------------- 下書き ---------------- */
+
+  // 入力のたびに localStorage へ書く。スマホは通知やアプリの切り替えで中断されるので、これが無いと書きかけが消える。
+  // キーは対象ごと。新規は hibi:draft:new、編集は hibi:draft:YYYY-MM-DD:HH-MM。
+  const draftKey = () => (target ? `hibi:draft:${hereDay}:${target.id}` : 'hibi:draft:new')
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k) } catch { return null } },
+    set: (k, v) => { try { localStorage.setItem(k, v) } catch {} },
+    del: (k) => { try { localStorage.removeItem(k) } catch {} },
+  }
+  const saveDraft = () => {
+    if (el.text.value.trim()) store.set(draftKey(), el.text.value)
+    else store.del(draftKey())
+  }
+  const clearDraft = () => store.del(draftKey())
+
   async function open(id) {
     target = id ? { id, time: id.replace('-', ':') } : null
     disarm()
     note('')
+    el.draft.hidden = true
     el.text.value = ''
     el.time.textContent = target ? target.time : ''
     el.time.hidden = !target
@@ -235,15 +254,29 @@
     el.submit.textContent = target ? '保存' : '投稿'
     el.del.hidden = !target
     dlg.showModal()
+    fit()
     el.text.focus()
-    if (!target) return
+    const draft = store.get(draftKey())
+    if (!target) {
+      // 新規なら、残っていた書きかけをそのまま入れる
+      if (draft) el.text.value = draft
+      return
+    }
     // 本文はサーバから読む。読み終わるまで保存も削除もできないようにしておく。
     setBusy(true)
     note('読んでいる…')
     try {
       const { exists, text } = await api(`entry?date=${hereDay}&time=${target.time}`)
-      el.text.value = exists ? text.replace(/\s+$/, '') : ''
+      const current = exists ? text.replace(/\s+$/, '') : ''
+      el.text.value = current
       note(exists ? '' : 'このファイルはもう無い', 'ng')
+      // 書きかけがサーバの本文と食い違うときだけ、どちらを使うか委ねる（同じなら黙って捨てる）
+      if (draft && draft.replace(/\s+$/, '') !== current) {
+        note('書きかけの下書きがある', 'warn')
+        el.draft.hidden = false
+      } else if (draft) {
+        clearDraft()
+      }
     } catch (e) {
       note(e.message, 'ng')
     } finally {
@@ -277,6 +310,7 @@
         if (body.date === hereDay) reloadAt(id)
         else location.assign(body.url + '#' + id)
       }
+      clearDraft()
       el.text.value = ''
       dlg.close()
     } catch (e) {
@@ -300,6 +334,7 @@
     try {
       await api('entry', jsonOpts('DELETE', { date: hereDay, time: target.time }))
       mark(`${target.time} を削除した`)
+      clearDraft()
       // 消したあとの行き先。同じ日に他のブロックが残っていれば読み直す。
       // 残っていなければ日ページごと無くなるので、まだ記述のある月へ、それも無ければ / へ。
       if (segs.length > 1) {
@@ -380,6 +415,33 @@
     upload(files)
   })
 
+  /* ---------------- ソフトキーボード ---------------- */
+
+  // iOS ではソフトキーボードが出ても固定した要素は押し上げられず、下段のボタンがキーボードの下に隠れる。
+  // visualViewport の高さと位置に合わせて、一段組のあいだだけシートの下端と高さを可視領域に揃える。
+  // キーボードが出ているあいだ（可視領域が窓より明らかに低い）は、可視領域いっぱいの高さにする。
+  const narrow = matchMedia('(max-width: 680px)')
+  const vv = window.visualViewport
+  function fit(view = vv) {
+    if (!dlg.open || !view || !narrow.matches) {
+      dlg.style.removeProperty('--vv-h')
+      dlg.style.removeProperty('--vv-b')
+      dlg.classList.remove('is-keyboard')
+      return
+    }
+    const bottom = Math.max(0, window.innerHeight - (view.offsetTop + view.height))
+    dlg.style.setProperty('--vv-h', `${Math.round(view.height)}px`)
+    dlg.style.setProperty('--vv-b', `${Math.round(bottom)}px`)
+    dlg.classList.toggle('is-keyboard', view.height < window.innerHeight - 120)
+  }
+  const refit = () => fit()
+  if (vv) {
+    vv.addEventListener('resize', refit)
+    vv.addEventListener('scroll', refit)
+  }
+  narrow.addEventListener('change', refit)
+  dlg.__fit = fit   // 試験用。偽の可視領域を渡して寸法を検算する
+
   /* ---------------- 操作 ---------------- */
 
   fab.addEventListener('click', () => open(null))
@@ -394,6 +456,14 @@
     open(null)
   })
   el.close.addEventListener('click', () => dlg.close())
+  el.text.addEventListener('input', saveDraft)
+  el.draft.addEventListener('click', () => {
+    el.text.value = store.get(draftKey()) || ''
+    el.draft.hidden = true
+    note('')
+    el.text.focus()
+  })
+  dlg.addEventListener('close', refit)
   el.submit.addEventListener('click', submit)
   el.del.addEventListener('click', remove)
   dlg.addEventListener('click', (e) => {
