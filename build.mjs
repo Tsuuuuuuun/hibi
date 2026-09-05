@@ -214,23 +214,21 @@ function firstImage(entry) {
   return null;
 }
 
-// 検索用。読める文字だけをブロックから拾って一本に繋ぐ。
+// 検索用。読める文字だけをブロックから拾って一本に繋ぐ。検索が当たる単位は一つの時刻ブロック。
 // 埋め込みは取得できた本文とキャプションだけ（iframe の中身は持っていない）。
-function entryText(entry) {
+function segText(seg) {
   const out = [];
   const push = s => { if (s) out.push(String(s).replace(INLINE_LINK, '$1')); };
-  for (const seg of entry.segs) {
-    push(seg.place?.name);
-    for (const b of seg.blocks) {
-      switch (b.type) {
-        case 'p': push(b.text); break;
-        case 'quote': push(b.text); push(b.cite); break;
-        case 'list': b.items.forEach(push); break;
-        case 'add': push(b.date ? `追記 ${b.date}` : '追記'); b.paras.forEach(push); break;
-        case 'img': case 'yt': case 'am': push(b.cap); break;
-        case 'link': push(b.title); push(b.desc); push(b.site); break;
-        case 'x': push(b.post?.text); push(b.cap); break;
-      }
+  push(seg.place?.name);
+  for (const b of seg.blocks) {
+    switch (b.type) {
+      case 'p': push(b.text); break;
+      case 'quote': push(b.text); push(b.cite); break;
+      case 'list': b.items.forEach(push); break;
+      case 'add': push(b.date ? `追記 ${b.date}` : '追記'); b.paras.forEach(push); break;
+      case 'img': case 'yt': case 'am': push(b.cap); break;
+      case 'link': push(b.title); push(b.desc); push(b.site); break;
+      case 'x': push(b.post?.text); push(b.cap); break;
     }
   }
   return out.join(' ');
@@ -767,10 +765,13 @@ function notFoundPageHtml() {
   });
 }
 
-// ブラウザ側で絞り込むための全文インデックス。日付と本文だけの小さな JSON。
-// 新しい日から並べる（search.js は当たったうちの先頭から上限までしか出さない）。
+// ブラウザ側で絞り込むための全文インデックス。日付・時刻と本文だけの小さな JSON。
+// 一件が一つの時刻ブロック。日をまとめて持つと、朝と夜に散った語でも一日として当たってしまう。
+// 新しい時刻から並べる（search.js は当たったうちの先頭から上限までしか出さない）。
 function searchIndex(entries) {
-  return JSON.stringify([...entries].reverse().map(e => ({ d: e.iso, t: entryText(e) })));
+  const rows = [];
+  for (const e of entries) for (const s of e.segs) rows.push({ d: e.iso, m: s.time, t: segText(s) });
+  return JSON.stringify(rows.reverse());
 }
 
 // 新しい日から 30 件。

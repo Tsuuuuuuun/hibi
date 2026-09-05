@@ -182,6 +182,7 @@ dialog.search::backdrop { background: rgba(23, 24, 26, .18); }
   font-variant-numeric: tabular-nums;
 }
 .hit-dow { letter-spacing: .18em; }
+.hit-time { letter-spacing: .14em; }
 
 .hit-text {
   display: block;

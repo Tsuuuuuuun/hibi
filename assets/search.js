@@ -33,7 +33,7 @@
   let loading = null;
   const load = () => loading || (loading = fetch('/search.json')
     .then(r => r.json())
-    .then(list => { rows = list.map(r => ({ d: r.d, t: r.t, n: norm(r.t) })); })
+    .then(list => { rows = list.map(r => ({ d: r.d, m: r.m, t: r.t, n: norm(r.t) })); })
     .catch(() => { rows = []; }));
 
   // 最初に当たった位置の前後を切り出し、その範囲の中の当たりをすべて包む
@@ -64,11 +64,13 @@
     return (from > 0 ? '…' : '') + out + (from + LEN < row.t.length ? '…' : '');
   }
 
+  // 飛び先は日ページの中のその時刻（id は build.mjs の timeId と同じ HH-MM）。
   function hitHtml(row, terms) {
     const [y, m, d] = row.d.split('-').map(Number);
     const dow = DOW[new Date(y, m - 1, d).getDay()];
-    return `<a class="hit" href="/${row.d.replaceAll('-', '/')}/">` +
-      `<span class="hit-date">${row.d.replaceAll('-', '.')}<span class="hit-dow">${dow}</span></span>` +
+    return `<a class="hit" href="/${row.d.replaceAll('-', '/')}/#${row.m.replace(':', '-')}">` +
+      `<span class="hit-date">${row.d.replaceAll('-', '.')}<span class="hit-dow">${dow}</span>` +
+      `<span class="hit-time">${row.m}</span></span>` +
       `<span class="hit-text">${snippet(row, terms)}</span></a>`;
   }
 
