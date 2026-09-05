@@ -652,6 +652,10 @@ function pageShell({ title, description, canonical, og, body }) {
     canonical ? `<link rel="canonical" href="${esc(canonical)}">` : '',
     `<meta property="og:site_name" content="${esc(config.title)}">`,
     ...(og || []),
+    // 板そのものが墨なので、タブの明暗にかかわらず同じ絵でいい（明暗別の指定は要らない）。
+    `<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">`,
+    // iOS のホーム画面用。SVG を読まないので PNG が要る（scripts/icon.mjs で書き出す）。
+    `<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">`,
     `<link rel="alternate" type="application/rss+xml" title="${esc(config.title)}" href="/feed.xml">`,
     `<link rel="preconnect" href="https://fonts.googleapis.com">`,
     `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>`,
