@@ -124,7 +124,10 @@ function parseBlock(lines) {
     return { type: 'link', href, manual: { title, desc, site, thumb } };
   }
   if (first.startsWith('@youtube ')) {
-    const [id, cap] = first.slice(9).split('|').map(s => s.trim());
+    // 共有リンクをそのまま書ける。ID だけでもよい
+    const [raw, cap] = first.slice(9).split('|').map(s => s.trim());
+    const id = youtubeId(raw);
+    if (!id) throw new Error(`@youtube には動画の URL か ID を書く（"${first}" が読めない）`);
     return { type: 'yt', id, cap: cap || '' };
   }
   if (first.startsWith('@music ')) {
@@ -188,6 +191,10 @@ const monthLabel = key => {
 const tweetId = s => /^\d+$/.test(s)
   ? s
   : s.match(/(?:twitter|x)\.com\/[^/]+\/status(?:es)?\/(\d+)/)?.[1] || '';
+// YouTube の各種 URL（youtu.be・watch?v=・shorts・live・embed）、または ID そのものから ID を取る
+const youtubeId = s => /^[\w-]{11}$/.test(s)
+  ? s
+  : s.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/))([\w-]{11})/)?.[1] || '';
 
 // 画像は md と同じ日ディレクトリに置き、ファイル名で参照する。URL は日ページの隣になる
 const isRemote = src => /^https?:\/\//.test(src);
