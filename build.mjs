@@ -41,16 +41,35 @@ function imageSizeOf(buf, label) {
   }
   if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
     let i = 2;
+    let orientation = 1;
     while (i + 9 < buf.length) {
       if (buf[i] !== 0xff) { i++; continue; }
       const marker = buf[i + 1];
+      if (marker === 0xe1) orientation = exifOrientation(buf, i + 4, i + 2 + buf.readUInt16BE(i + 2)) ?? orientation;
       if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+        const h = buf.readUInt16BE(i + 5), w = buf.readUInt16BE(i + 7);
+        // ブラウザは EXIF の向きどおりに回して描く。5〜8 は 90° 回るので縦横を入れ替える
+        return orientation >= 5 && orientation <= 8 ? { w: h, h: w } : { w, h };
       }
       i += 2 + buf.readUInt16BE(i + 2);
     }
   }
   throw new Error(`画像サイズを読めない: ${label}（JPEG/PNG のみ対応）`);
+}
+
+// APP1 の中身（start〜end）が Exif なら、IFD0 の Orientation（0x0112）を返す。なければ null
+function exifOrientation(buf, start, end) {
+  if (end > buf.length || buf.toString('latin1', start, start + 6) !== 'Exif\0\0') return null;
+  const tiff = start + 6;
+  const le = buf.toString('latin1', tiff, tiff + 2) === 'II';
+  const u16 = o => le ? buf.readUInt16LE(o) : buf.readUInt16BE(o);
+  const u32 = o => le ? buf.readUInt32LE(o) : buf.readUInt32BE(o);
+  const ifd = tiff + u32(tiff + 4);
+  if (ifd + 2 > end) return null;
+  for (let n = u16(ifd), e = ifd + 2; n > 0 && e + 12 <= end; n--, e += 12) {
+    if (u16(e) === 0x0112) return u16(e + 8);
+  }
+  return null;
 }
 
 /* ---------------- パース ---------------- */
