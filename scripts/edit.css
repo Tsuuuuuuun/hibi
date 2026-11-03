@@ -104,12 +104,43 @@ html:has(dialog.edit[open]) { overflow: hidden; }
 }
 .edit-text::placeholder { color: var(--faint); }
 
+/* 本文欄の下の道具の列。写真のあとに仕切りを置き、その右が @ の記法。狭ければ横に流す（スクロールバーは出さない） */
+.edit-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-top: 1px solid var(--hair);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.edit-tools::-webkit-scrollbar { display: none; }
+.edit-tool {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+}
+.edit-tool svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.edit-tool:hover { color: var(--ink); background: var(--hair); }
+.edit-tool:focus-visible { outline: 2px solid var(--navy); outline-offset: -2px; }
+.edit-tool:disabled { opacity: .4; cursor: default; background: transparent; }
+.edit-tools-sep { flex: none; width: 1px; height: 16px; margin: 0 6px; background: var(--hair-dark); }
+
+/* 下段のボタン。罫線は道具の列が持つので、ここには引かない */
 .edit-foot {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--hair);
+  padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
 }
 .edit-foot button {
   padding: 8px 16px;

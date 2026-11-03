@@ -142,9 +142,10 @@
     '<span class="edit-note" aria-live="polite"></span>' +
     '<button type="button" class="edit-draft" hidden>下書きを使う</button></div>' +
     '<textarea class="edit-text" rows="6" placeholder="いま思ったこと" autocapitalize="off"></textarea>' +
+    // 本文欄の下に道具の列。写真と、@ で始まる記法を一つずつ（中身は下の TOOLS から組む）
+    '<div class="edit-tools" role="toolbar" aria-label="挿入"></div>' +
     '<div class="edit-foot">' +
     '<span class="edit-left"><button type="button" class="edit-close">閉じる</button>' +
-    '<button type="button" class="edit-photo">写真</button>' +
     '<button type="button" class="edit-delete" hidden>削除</button></span>' +
     '<button type="button" class="edit-submit">投稿</button>' +
     '</div>' +
@@ -161,7 +162,7 @@
     draft: dlg.querySelector('.edit-draft'),
     text: dlg.querySelector('.edit-text'),
     close: dlg.querySelector('.edit-close'),
-    photo: dlg.querySelector('.edit-photo'),
+    tools: dlg.querySelector('.edit-tools'),
     file: dlg.querySelector('.edit-file'),
     del: dlg.querySelector('.edit-delete'),
     submit: dlg.querySelector('.edit-submit'),
@@ -214,7 +215,7 @@
     busy = on
     el.submit.disabled = on
     el.del.disabled = on
-    el.photo.disabled = on
+    for (const b of el.tools.querySelectorAll('button')) b.disabled = on
   }
   const disarm = () => {
     armed = false
@@ -351,18 +352,84 @@
     }
   }
 
-  /* ---------------- 写真 ---------------- */
+  /* ---------------- 挿入 ---------------- */
 
-  // 写真は一枚で一つの図になるので、前後を空行で挟んだ一行として入れる（_write と同じ）
-  function insertBlock(s) {
+  // 写真も @ の記法も一つで一つのブロックになるので、前後を空行で挟んで入れる（_write と同じ）。
+  // 入れる位置は選択の終わり。選んであった文字は消さない（consume を立てたときだけ s に置き換える）。
+  // from/to を渡せば、入れたあとに s の中のその範囲を選んでおく
+  // （仮の文字を入れて選んでおき、そのまま貼り付けか打ち込みで埋めてもらうため）。省けば s の直後に置く。
+  function insertBlock(s, { from = s.length, to = from, consume = false } = {}) {
     const t = el.text
-    const before = t.value.slice(0, t.selectionStart).replace(/\n+$/, '')
+    const start = consume ? t.selectionStart : t.selectionEnd
+    const before = t.value.slice(0, start).replace(/\n+$/, '')
     const after = t.value.slice(t.selectionEnd).replace(/^\n+/, '')
     t.value = (before ? before + '\n\n' : '') + s + (after ? '\n\n' + after : '\n')
-    const pos = (before ? before.length + 2 : 0) + s.length
-    t.setSelectionRange(pos, pos)
+    const base = before ? before.length + 2 : 0
+    t.setSelectionRange(base + from, base + to)
     t.focus()
+    saveDraft()
   }
+
+  // 本文欄の下に並ぶ道具。@ の記法は覚えにくいので、押せば雛形が入るようにしてある（記法は README の記法一覧）。
+  // 埋める所（URL や場所の名前）は仮の文字で入れて選んでおくので、そのまま貼り付ければよい。
+  // 本文欄で URL などを選んでから押せば、仮の文字の代わりにそれが入る（貼ってから形にする使い方）。
+  // 読み上げと title に記法そのものも書いておき、覚える手がかりにする。
+  const ICON = (d) => `<svg viewBox="0 0 16 16" aria-hidden="true">${d}</svg>`
+  const TOOLS = [
+    { key: 'photo', label: '写真を添付',
+      icon: ICON('<rect x="1.8" y="3" width="12.4" height="10" rx="1.6"/><circle cx="5.6" cy="6.3" r="1.2"/><path d="M2.4 12.2 6.4 8.4l2.5 2.3 2-1.8 2.8 2.7"/>') },
+    { key: 'link', label: 'リンクカード（@link URL）', tpl: '@link URL', pick: 'URL',
+      icon: ICON('<path d="M6.6 9.4 9.4 6.6"/><path d="M7.3 4.7l1.3-1.3a2.7 2.7 0 0 1 3.8 3.8L11.1 8.5"/><path d="M8.7 11.3l-1.3 1.3a2.7 2.7 0 0 1-3.8-3.8l1.3-1.3"/>') },
+    { key: 'youtube', label: 'YouTube（@youtube URL）', tpl: '@youtube URL', pick: 'URL',
+      icon: ICON('<rect x="1.8" y="3.4" width="12.4" height="9.2" rx="2.4"/><path d="M6.7 5.9v4.2L10.3 8Z"/>') },
+    { key: 'x', label: 'X のポスト（@x URL）', tpl: '@x URL', pick: 'URL',
+      icon: ICON('<path d="M3.6 3 12.4 13"/><path d="M12.4 3 3.6 13" stroke-width=".9"/>') },
+    { key: 'music', label: 'Apple Music（@music URL）', tpl: '@music URL', pick: 'URL',
+      icon: ICON('<path d="M6 12.3V3.7l6-1.3v8.5"/><circle cx="4.2" cy="12.3" r="1.8"/><circle cx="10.2" cy="10.9" r="1.8"/>') },
+    { key: 'map', label: '場所（@map 場所 | 地図のリンク）', tpl: '@map 場所', pick: '場所',
+      icon: ICON('<path d="M8 1.5a4.5 4.5 0 0 1 4.5 4.5c0 3.3-4.5 8.5-4.5 8.5S3.5 9.3 3.5 6A4.5 4.5 0 0 1 8 1.5Z"/><circle cx="8" cy="6" r="1.6"/>') },
+    { key: 'add', label: '追記（@追記 日付）',
+      icon: ICON('<path d="M2.5 4h8.5"/><path d="M2.5 7.5h8.5"/><path d="M2.5 11h5"/><path d="M12 8.5v5"/><path d="M9.5 11h5"/>') },
+  ]
+  el.tools.innerHTML = TOOLS.map((tool, i) =>
+    (i === 1 ? '<span class="edit-tools-sep" aria-hidden="true"></span>' : '') +
+    `<button type="button" class="edit-tool" data-tool="${tool.key}" aria-label="${tool.label}" title="${tool.label}">${tool.icon}</button>`
+  ).join('')
+
+  // 本文欄で選んである一行があれば、それを埋めるものとして使う
+  const selection = () => {
+    const sel = el.text.value.slice(el.text.selectionStart, el.text.selectionEnd).trim()
+    return sel && !/\n/.test(sel) ? sel : ''
+  }
+
+  function insertDirective(tool) {
+    const sel = selection()
+    if (sel) return insertBlock(tool.tpl.replace(tool.pick, sel), { consume: true })
+    const at = tool.tpl.indexOf(tool.pick)
+    insertBlock(tool.tpl, { from: at, to: at + tool.pick.length })
+  }
+
+  // 追記。書いている日が今日でなければ今日の日付を付け（後から足したと分かる）、本文は次の行から。
+  // 今日なら日付は要らないので、「@追記 」に続けてそのまま書く。選んであった文字は一段落目になる。
+  function insertAddendum() {
+    const sel = selection()
+    const day = target ? hereDay : el.day.value || today()
+    const consume = !!sel
+    if (day === today()) return insertBlock('@追記 ' + sel, { consume })
+    const d = new Date()
+    insertBlock(`@追記 ${pad(d.getMonth() + 1)}.${pad(d.getDate())}\n` + sel, { consume })
+  }
+
+  el.tools.addEventListener('click', (e) => {
+    const b = e.target.closest('.edit-tool')
+    if (!b || busy) return
+    const tool = TOOLS.find((t) => t.key === b.dataset.tool)
+    if (tool.key === 'photo') el.file.click()
+    else if (tool.key === 'add') insertAddendum()
+    else insertDirective(tool)
+  })
+
+  /* ---------------- 写真 ---------------- */
 
   const imagesOf = (list) => [...list].filter((f) => f && /^image\/(jpeg|png)$/.test(f.type))
 
@@ -389,7 +456,6 @@
     }
   }
 
-  el.photo.addEventListener('click', () => el.file.click())
   el.file.addEventListener('change', () => upload(imagesOf(el.file.files)))
   // デスクトップではドラッグ＆ドロップと貼り付けも受ける
   for (const type of ['dragenter', 'dragover']) {
